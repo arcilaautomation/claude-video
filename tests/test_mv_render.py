@@ -139,3 +139,19 @@ def test_composition_error_is_reported(tmp_path):
     proc = render("info", str(d))
     assert proc.returncode == 3
     assert "config.width must be a positive number" in proc.stderr
+
+
+def test_tall_composition_is_not_clipped(tmp_path):
+    """Pages open before their size is known; the viewport must grow to fit (9:16, 4K, 21:9)."""
+    d = project(tmp_path, """
+import { defineVideo } from './lib/mv.js';
+defineVideo({ width: 200, height: 1200, fps: 10, background: '#000',
+  scenes: [{ name: 'tall', duration: 0.3, canvas: true, render(t, s) { s.ctx.fillStyle = '#ff0000'; s.ctx.fillRect(0, 0, 200, 1200); } }] });
+""")
+    proc = render("video", str(d), "--workers", "1", "--no-audio", "--no-qa", "--no-sheet", "--json")
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)["file"]
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", out, "-frames:v", "1", "-vf", "crop=200:40:0:1150", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                         capture_output=True).stdout
+    reds = raw[0::3]
+    assert sum(reds) / len(reds) > 200, "bottom of a tall frame came out dark — viewport clipped the capture"

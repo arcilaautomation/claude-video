@@ -343,6 +343,9 @@ async function openPage(browser, baseUrl, { width = 1920, height = 1080, scale =
     }
   });
   if (!info || info.__error) throw new CompositionError(`Composition failed during setup:\n${(info && info.__error) || errors.join('\n')}`);
+  // The page is opened before its size is known: match the viewport to the
+  // composition so screenshots never clip past it (vertical, 21:9, 4K…).
+  if (info.width !== width || info.height !== height) await page.setViewportSize({ width: info.width, height: info.height });
   const cdp = await context.newCDPSession(page);
   if (alpha) await cdp.send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
   return { context, page, cdp, info, errors };

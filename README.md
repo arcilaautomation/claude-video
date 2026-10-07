@@ -274,7 +274,7 @@ Projects are self-contained folders (`index.html` + a copy of the runtime in `li
 
 ### Limits
 
-- Rendering speed depends on the scene: roughly 10–25 frames/s at 1080p on 4 CPU cores, so a 30 s video takes 1–3 minutes. Use `--draft` while iterating.
+- Rendering speed depends on resolution and scene complexity: measured ~9 frames/s for a texture-heavy 1080p explainer and ~15–25 frames/s at 720p on 4 CPU cores, so a 30 s 1080p video takes about 1–3 minutes. Use `--draft` (half resolution) while iterating.
 - Headless Chromium can't decode H.264, so footage is converted to WebM first (`media.py clip`).
 - The agent reviews frames, not motion: contact sheets, stills and the audits catch layout and timing problems; watch the final MP4 yourself for feel.
 
