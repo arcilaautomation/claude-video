@@ -1,7 +1,7 @@
 {
   "name": "watch",
-  "version": "0.2.0",
-  "description": "Let Claude watch a video. Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls captions or falls back to Whisper, and hands frames + transcript to Claude so it can answer questions about the video.",
+  "version": "0.3.0",
+  "description": "Give Claude video input and video output. /watch downloads a video, extracts auto-scaled frames with ffmpeg and pulls captions or Whisper transcripts so Claude can answer questions about it. /make-video scripts, storyboards and renders videos as code \u2014 JavaScript frames rendered in headless Chromium and stitched with ffmpeg, with narration, music and sound effects, in seven built-in styles.",
   "author": {
     "name": "Bradley Bonanno"
   },
@@ -19,24 +19,34 @@
     "yt-dlp",
     "ffmpeg",
     "multimodal",
-    "frames"
+    "frames",
+    "make-video",
+    "motion-graphics",
+    "animation",
+    "explainer",
+    "playwright",
+    "storyboard",
+    "text-to-speech"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "watch",
-    "shortDescription": "Give Claude a video input — paste a URL or path and ask about it.",
-    "longDescription": "watch adds a skill that lets the agent watch any video: it downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls a timestamped transcript from native captions (or the Whisper API as a fallback), and hands frames + transcript to the model so it can answer questions grounded in what's actually on screen and in the audio.",
+    "shortDescription": "Give Claude video input (/watch) and video output (/make-video).",
+    "longDescription": "watch adds a skill that lets the agent watch any video: it downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls a timestamped transcript from native captions (or the Whisper API as a fallback), and hands frames + transcript to the model so it can answer questions grounded in what's actually on screen and in the audio. make-video adds the other direction: the agent scripts and storyboards a video with you, writes every frame as a JavaScript function of time, renders it in headless Chromium with Playwright, stitches it with ffmpeg into an MP4 with narration, music and sound effects, and reviews its own frames (contact sheets, layout and determinism audits, QA) before delivering. Seven styles: cut paper, cross-hatch, risograph, sketchbook, isometric, chalkboard, kinetic type.",
     "developerName": "Bradley Bonanno",
     "category": "Productivity",
     "capabilities": [
       "Interactive",
-      "Read"
+      "Read",
+      "Write"
     ],
     "websiteURL": "https://github.com/bradautomates/claude-video",
     "defaultPrompt": [
       "/watch https://youtu.be/dQw4w9WgXcQ what happens at the 30 second mark?",
       "/watch ~/Movies/screen-recording.mp4 when does the UI break?",
-      "/watch https://youtu.be/<long-talk> summarize this"
+      "/watch https://youtu.be/<long-talk> summarize this",
+      "/make-video a 30-second explainer about how tides work, chalkboard style",
+      "/make-video a 15-second vertical promo for our app launch, kinetic type"
     ],
     "brandColor": "#E11D48"
   }

@@ -81,3 +81,75 @@ def static_clip(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("clips") / "static.mp4"
     build_static_clip(path)
     return path
+
+
+# ───────────────────────────── make-video ─────────────────────────────
+
+import importlib.util  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import shutil  # noqa: E402
+
+MV_DIR = Path(__file__).resolve().parent.parent / "skills" / "make-video"
+MV_SCRIPTS = MV_DIR / "scripts"
+
+
+def load_mv(name: str, alias: str | None = None):
+    """Import a make-video script by file path under a unique module name."""
+    if str(MV_SCRIPTS) not in sys.path:
+        sys.path.append(str(MV_SCRIPTS))
+    spec = importlib.util.spec_from_file_location(alias or f"mv_{name}", MV_SCRIPTS / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture
+def mv_isolated(tmp_path, monkeypatch):
+    """Fresh HOME / MAKE_VIDEO_HOME and no API keys or proxies for local mock servers."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("MAKE_VIDEO_HOME", str(tmp_path / "mvhome"))
+    for key in ["ELEVENLABS_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "MAKE_VIDEO_TTS", "MAKE_VIDEO_VOICE", "PIPER_MODEL"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+    env_mod = load_mv("mv_env", alias="mv_env")
+    monkeypatch.setattr(env_mod, "CONFIG_FILE", home / ".config" / "make-video" / ".env")
+    monkeypatch.setattr(env_mod, "WATCH_CONFIG_FILE", home / ".config" / "watch" / ".env")
+    sys.modules["mv_env"] = env_mod
+    return home
+
+
+def synth_audio(path: Path, pattern: list[tuple[str, float]], rate: int = 44100) -> Path:
+    """Concatenate tone ('tone') and silence ('gap') segments into a WAV file."""
+    inputs, labels = [], []
+    for i, (kind, dur) in enumerate(pattern):
+        src = f"sine=frequency=330:sample_rate={rate}:duration={dur}" if kind == "tone" else f"anullsrc=r={rate}:cl=mono:d={dur}"
+        inputs += ["-f", "lavfi", "-i", src]
+        labels.append(f"[{i}:a]")
+    filt = "".join(labels) + f"concat=n={len(pattern)}:v=0:a=1[out]"
+    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs, "-filter_complex", filt, "-map", "[out]", "-ac", "1", str(path)])
+    return path
+
+
+def renderer_status() -> dict:
+    """{'ok': bool, ...} from `render.mjs doctor`, cached for the session."""
+    if not hasattr(renderer_status, "cache"):
+        node = shutil.which("node")
+        if not node:
+            renderer_status.cache = {"ok": False, "why": "node not installed"}
+        else:
+            proc = subprocess.run([node, str(MV_SCRIPTS / "render.mjs"), "doctor", "--json"], capture_output=True, text=True, timeout=180)
+            try:
+                renderer_status.cache = json.loads(proc.stdout)
+            except ValueError:
+                renderer_status.cache = {"ok": False, "why": proc.stderr[-300:]}
+    return renderer_status.cache
+
+
+requires_renderer = pytest.mark.skipif(
+    not (shutil.which("node") and shutil.which("ffmpeg")), reason="node and ffmpeg are required for render tests"
+)

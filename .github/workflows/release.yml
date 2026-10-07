@@ -17,15 +17,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build .skill artifact
+      - name: Build .skill artifacts
         run: |
           bash skills/watch/scripts/build-skill.sh
+          bash skills/make-video/scripts/build-skill.sh
           test -f dist/watch.skill
+          test -f dist/make-video.skill
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/watch.skill
+          files: |
+            dist/watch.skill
+            dist/make-video.skill
           generate_release_notes: true
           draft: false
           prerelease: false

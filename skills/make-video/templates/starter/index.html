@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="lib/fonts.css">
+<style>
+  /* Everything is laid out in frame pixels. applyTheme() sets the palette, the
+     fonts/weights and a type scale that grows with the frame (--size-*). */
+  .mv-clip { color: var(--ink); }
+  .frame { position: absolute; inset: var(--pad-y) var(--pad-x); display: flex; flex-direction: column; justify-content: center; transform-origin: 30% 50%; }
+  .kicker { font: 600 var(--size-label)/1.1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; margin-bottom: .7em; }
+  .title { font: var(--weight-display) var(--size-hero)/1.02 var(--font-display); max-width: 88%; text-wrap: balance; }
+  .underline { display: block; width: 50%; height: calc(var(--size-label) * 1.4); margin-top: .3em; overflow: visible; }
+  .heading { font: var(--weight-display) var(--size-title)/1.05 var(--font-display); margin-bottom: .5em; text-wrap: balance; }
+  .split { flex-direction: row; align-items: center; gap: 6%; }
+  .split .heading { flex: 0 0 34%; font-size: calc(var(--size-title) * 1.25); margin: 0; }
+  .split .rows { flex: 1; }
+  .row { display: flex; align-items: center; gap: .7em; font: var(--weight-body) var(--size-subtitle)/1.2 var(--font-body); margin: .38em 0; }
+  .dot { flex: none; width: 1.5em; height: 1.5em; border-radius: 50%; display: grid; place-items: center; font: 700 .72em/1 var(--font-body); }
+  .center { align-items: center; text-align: center; transform-origin: 50% 50%; }
+  .closing { font: var(--weight-display) var(--size-title)/1.08 var(--font-display); max-width: 86%; text-wrap: balance; }
+  .sig { font: var(--weight-body) var(--size-body)/1 var(--font-body); color: var(--muted); margin-top: 1em; letter-spacing: .04em; }
+
+  /* Style accents — small CSS touches per preset (see references/styles/<name>.md). */
+  [data-style="cut-paper"] .dot { box-shadow: 3px 5px 0 rgba(45, 30, 15, .22); }
+  [data-style="cross-hatch"] .title, [data-style="cross-hatch"] .heading, [data-style="cross-hatch"] .closing { font-style: italic; }
+  [data-style="cross-hatch"] .dot, [data-style="sketchbook"] .dot, [data-style="chalkboard"] .dot { background: transparent !important; border: .1em solid currentColor; color: var(--ink) !important; }
+  [data-style="sketchbook"] .dot { border-radius: 47% 53% 44% 56% / 55% 45% 55% 45%; }
+  [data-style="chalkboard"] .dot { border-style: dashed; }
+  [data-style="risograph"] .title, [data-style="risograph"] .heading, [data-style="risograph"] .closing { font-stretch: 75%; text-transform: uppercase; text-shadow: .045em .03em 0 rgba(255, 72, 176, .75); }
+  [data-style="kinetic-type"] .title { font-size: calc(var(--size-hero) * 1.45); line-height: .95; text-transform: uppercase; }
+  [data-style="kinetic-type"] .heading, [data-style="kinetic-type"] .closing { font-size: var(--size-hero); line-height: .98; text-transform: uppercase; }
+  [data-style="kinetic-type"] .mv-word { overflow: hidden; vertical-align: top; padding-bottom: .04em; }
+  [data-style="kinetic-type"] .dot { border-radius: 0; }
+  [data-style="isometric"] .dot { border-radius: .3em; }
+</style>
+</head>
+<body>
+<script type="module">
+import { defineVideo, ease, clamp, css, splitText, fitText, drawOn, h, svg, stepTime, hash, contrast, readable, textLines } from './lib/mv.js';
+import { applyTheme } from './lib/mv-themes.js';
+import { backdrop } from './lib/mv-draw.js';
+
+// ── format & style ────────────────────────────────────────────────────────
+const W = {{WIDTH}}, H = {{HEIGHT}}, FPS = {{FPS}};
+const theme = applyTheme('{{STYLE}}', { width: W, height: H });
+document.body.dataset.style = theme.key;
+const P = theme.palette;
+const pop = ease[theme.motion.ease] || ease.outCubic;           // the style's signature curve
+const step = (t) => (theme.motion.stepFps ? stepTime(t, theme.motion.stepFps) : t); // stop-motion feel
+const kickerColor = readable(P.accent, P.bg, 3.5);
+const badgeColors = theme.key === 'kinetic-type' ? [P.accent, P.ink, P.accent] : P.colors;
+const onBadge = (c) => (contrast(c, P.ink) >= contrast(c, P.bg) ? P.ink : P.bg);
+const landscape = W / H > 1.2;
+const handDrawn = !['isometric', 'kinetic-type'].includes(theme.key);   // clean styles get a straight bar
+
+// One headline entrance, adapted per style. Every property is set on every
+// frame (never conditionally) so any frame can be rendered on its own.
+function enterChars(chars, t, start, each = 0.035, dur = 0.5) {
+  t = step(t);
+  chars.forEach((c, i) => {
+    const p = clamp((t - start - i * each) / dur);
+    const e = pop(p);
+    switch (theme.key) {
+      case 'kinetic-type': css(c, { y: `${(1 - ease.outExpo(p)) * 105}%`, opacity: 1 }); break;
+      case 'chalkboard':
+      case 'cross-hatch': css(c, { y: 0, opacity: ease.inOutSine(p), blur: (1 - p) * 5 }); break;
+      case 'cut-paper': css(c, { y: (1 - e) * 70, rotate: (1 - e) * (hash(i) - 0.5) * 40 + (hash(i, 7) - 0.5) * 4, opacity: p > 0 ? 1 : 0 }); break;
+      default: css(c, { y: (1 - e) * 46, scale: 0.7 + 0.3 * e, opacity: clamp(p * 3) });
+    }
+  });
+}
+// A slow push-in keeps every hold alive (the QA flags 4 s with nothing moving).
+const pushIn = (s, el, amount = 0.03) => css(el, { scale: 1 + amount * ease.inOutSine(s.p) });
+
+// ── content (replace with the approved script) ────────────────────────────
+const TEXT = {
+  kicker: 'A short explainer',
+  title: '{{TITLE}}',
+  heading: 'Three rules',
+  points: ['Hook in the first second', 'One idea per scene', 'End on a clear payoff'],
+  closing: 'Every frame is a function of time.',
+  sig: 'made with code',
+};
+
+defineVideo({
+  title: '{{TITLE}}',
+  width: W, height: H, fps: FPS,
+  background: P.bg,
+  transition: theme.motion.transition,      // default scene-to-scene transition for this style
+
+  layers: [
+    // Texture + quiet corner motif behind everything (paper, board, grid, …).
+    { name: 'backdrop', under: true, canvas: true, render(t, s) { backdrop(s.ctx, theme, t, W, H); } },
+  ],
+
+  scenes: [
+    {
+      name: 'title', duration: 3.6, label: 'Title', note: 'Kicker, headline rises in, accent underline draws on.',
+      build(el) {
+        const line = svg('svg', { class: 'underline' });
+        el.append(h('div', { class: 'frame' },
+          h('div', { class: 'kicker', style: { color: kickerColor } }, TEXT.kicker),
+          h('div', { class: 'title' }, TEXT.title),
+          line));
+        const title = el.querySelector('.title');
+        splitText(title);
+        fitText(title, { max: parseFloat(getComputedStyle(title).fontSize), min: 40, width: W * 0.8, height: H * 0.42 });
+        // Size the underline to the headline's last line and draw it in pixel space
+        // (no stretched viewBox) so drawOn's length is exact.
+        const lines = textLines(title);
+        const last = lines[lines.length - 1];
+        const lw = Math.round(last ? last.w : W * 0.4), lh = line.clientHeight, sw = Math.max(4, lh * 0.22);
+        line.style.width = `${lw}px`;
+        line.setAttribute('viewBox', `0 0 ${lw} ${lh}`);
+        line.append(svg('path', {
+          d: handDrawn
+            ? `M ${sw} ${lh * 0.62} C ${lw * 0.25} ${lh * 0.2}, ${lw * 0.55} ${lh * 0.85}, ${lw - sw} ${lh * 0.35}`
+            : `M ${sw} ${lh * 0.5} L ${lw - sw} ${lh * 0.5}`,
+          fill: 'none', stroke: P.accent, 'stroke-width': sw, 'stroke-linecap': handDrawn ? 'round' : 'butt',
+        }));
+      },
+      render(t, s) {
+        pushIn(s, s.$('.frame'));
+        css(s.$('.kicker'), { opacity: s.at(0, 0.4), x: (1 - s.at(0, 0.5, ease.outCubic)) * -30 });
+        enterChars(splitText(s.$('.title')).chars, t, 0.1);
+        drawOn(s.$('.underline path'), s.at(1.0, 1.8, ease.inOutCubic));
+      },
+    },
+    {
+      name: 'points', duration: 4.6, label: 'Points', note: 'Heading, then three rows land one after another.',
+      build(el) {
+        el.append(h('div', { class: landscape ? 'frame split' : 'frame' },
+          h('div', { class: 'heading' }, TEXT.heading),
+          h('div', { class: 'rows' }, ...TEXT.points.map((txt, i) => {
+            const c = badgeColors[i % badgeColors.length];
+            return h('div', { class: 'row' },
+              h('span', { class: 'dot', style: { background: c, color: onBadge(c) } }, String(i + 1)),
+              h('span', {}, txt));
+          })),
+        ));
+        splitText(el.querySelector('.heading'));
+      },
+      render(t, s) {
+        const tt = step(t);
+        pushIn(s, s.$('.frame'));
+        // Content arrives right away: after a hard cut an empty frame reads as a glitch.
+        enterChars(splitText(s.$('.heading')).chars, t, 0, 0.03, 0.45);
+        s.$$('.row').forEach((row, i) => {
+          const p = clamp((tt - 0.6 - i * 0.45) / 0.5);
+          css(row, { opacity: clamp(p * 2), x: (1 - pop(p)) * -60 });
+          css(row.querySelector('.dot'), { scale: pop(clamp((tt - 0.6 - i * 0.45) / 0.4)) });
+        });
+      },
+    },
+    {
+      name: 'outro', duration: 3.2, label: 'Outro', note: 'Closing line and signature; hold for a beat.',
+      build(el) {
+        el.append(h('div', { class: 'frame center' },
+          h('div', { class: 'closing' }, TEXT.closing),
+          h('div', { class: 'sig' }, TEXT.sig)));
+        const closing = el.querySelector('.closing');
+        splitText(closing);
+        fitText(closing, { max: parseFloat(getComputedStyle(closing).fontSize), min: 32, width: W * 0.8, height: H * 0.5 });
+      },
+      render(t, s) {
+        pushIn(s, s.$('.frame'), 0.025);
+        enterChars(splitText(s.$('.closing')).chars, t, 0, 0.025, 0.45);
+        css(s.$('.sig'), { opacity: s.at(1.2, 1.8) });
+      },
+    },
+  ],
+
+  // Sound is code too: a bed in the style's mood + effects on the cuts.
+  audio(a) {
+    const m = theme.music;
+    a.pad({ chords: m.chords, every: m.every, gain: 0.12 });
+    if (m.arp) a.arp({ chords: m.chords, every: m.every, rate: m.bpm / 30, gain: 0.045 });
+    if (m.drums) a.drums({ bpm: m.bpm, gain: 0.2 });
+    for (const sc of a.scenes.slice(1)) a.whoosh(sc.start - 0.1, { gain: 0.3, dur: Math.max(0.4, sc.transitionDuration + 0.2) });
+    const pts = a.scene('points').start;
+    [0, 1, 2].forEach((i) => a.pop(pts + 0.65 + i * 0.45, { gain: 0.3, pitch: 480 + i * 80 }));
+    a.chime(a.scene('outro').start + 0.4, { note: 'E6', gain: 0.14 });
+  },
+});
+</script>
+</body>
+</html>

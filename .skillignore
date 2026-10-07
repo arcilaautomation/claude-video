@@ -1,5 +1,5 @@
 # Agent Skills install-time scanner exclusions for repository-root scans.
-# Keep the public bundle focused on the runtime skill under skills/watch/.
+# Keep the public bundle focused on the runtime skills under skills/watch/ and skills/make-video/.
 
 # VCS, local envs, caches, and generated outputs
 .git/
@@ -31,3 +31,4 @@ V2_CONCERNS.md
 
 # Dev-only script shipped inside the skill tree but not needed at runtime
 skills/watch/scripts/build-skill.sh
+skills/make-video/scripts/build-skill.sh

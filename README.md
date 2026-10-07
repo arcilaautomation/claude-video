@@ -1,6 +1,13 @@
-# /watch
+# claude-video — /watch + /make-video
 
-**Give Claude the ability to watch any video.**
+**Give Claude the ability to watch any video — and to make new ones.**
+
+| Skill | What it gives the agent |
+|-------|-------------------------|
+| [`/watch`](#watch) | Video **input**: paste a URL or path, Claude sees the frames and reads the transcript. |
+| [`/make-video`](#make-video--make-videos-with-code) | Video **output**: Claude scripts, storyboards, renders and reviews motion graphics, explainers and shorts — every frame is JavaScript, rendered with headless Chromium + ffmpeg. |
+
+Both install together:
 
 Claude Code (recommended — auto-updates via marketplace):
 ```
@@ -16,9 +23,11 @@ npx skills add bradautomates/claude-video -g
 
 More install options (claude.ai web, manual) in the [Install](#install) section below.
 
-Zero config to start — `yt-dlp` and `ffmpeg` install on first run via `brew` on macOS (Linux/Windows print exact commands). Captions cover most public videos for free. Whisper API key is only needed when a video has no captions.
+Zero config to start — `yt-dlp` and `ffmpeg` install on first run via `brew` on macOS (Linux/Windows print exact commands). Captions cover most public videos for free. Whisper API key is only needed when a video has no captions. `/make-video` installs its own runtime (Playwright + headless Chromium + fonts, ~100 MB) on first use.
 
 ---
+
+## /watch
 
 Claude can read a webpage, run a script, browse a repo. What it can't do, out of the box, is *watch a video*. You paste a YouTube link and it has to either guess from the title or pull a transcript that's missing 90% of what's on screen.
 
@@ -127,7 +136,7 @@ npx skills add bradautomates/claude-video -g
 - `-l, --list` — list the skills in this repo without installing
 - `--copy` — copy files instead of symlinking (for filesystems without symlink support)
 
-The CLI discovers the skill from `skills/watch/SKILL.md` and copies the whole folder — `SKILL.md` plus its `scripts/` runtime — as a self-contained unit. `SKILL.md` resolves its own scripts relative to wherever it was installed, so it works the same on every host.
+The CLI discovers the skills from `skills/watch/SKILL.md` and `skills/make-video/SKILL.md` and copies each whole folder — `SKILL.md` plus its `scripts/` (and for make-video its `runtime/`, `templates/`, `references/`) — as a self-contained unit. `SKILL.md` resolves its own scripts relative to wherever it was installed, so it works the same on every host.
 
 Update later with `npx skills update watch -g`.
 
@@ -205,10 +214,86 @@ Other knobs (passed to `scripts/watch.py`):
 - **Long-video accuracy depends on the detail mode.** On the capped modes (`efficient`, default `balanced`) coverage thins out past ~10 minutes — the frame cap spreads across the whole clip, so the script prints a "sparse scan" warning and you're better off re-running focused with `--start`/`--end`. `token-burner` lifts the cap and keeps *every* scene-change frame across the full video, so it stays complete on longer clips at the cost of more image tokens. The 10-minute mark is guidance for the capped modes, not a hard ceiling.
 - **Detail is one dial.** Defaults are balanced: scene-aware frames, 2 fps max, 100-frame cap. Use `--detail efficient` for a fast 50-frame keyframe pass, or `--detail token-burner` for uncapped scene candidates. Set `WATCH_DETAIL` in `~/.config/watch/.env` to change the default.
 
+## /make-video — make videos with code
+
+```
+/make-video a 30-second explainer about how tides work, chalkboard style
+/make-video a 15-second vertical teaser for our launch, kinetic type, with sound
+/make-video recreate the pacing of https://youtu.be/<reference> but about our product
+```
+
+No AI video model is involved. A video is a function of time: Claude writes an HTML/JavaScript composition whose `render(t)` draws the frame for any moment `t`, and the skill turns that into an MP4:
+
+1. **Intake** — format (16:9 / 9:16 / 1:1), length, style, audio; only what your request didn't already say.
+2. **Story & script** — one-sentence idea, beats, narration at ~2.5 words/second. You approve it.
+3. **Storyboard** — each scene is built in its settled state and rendered as a numbered storyboard sheet (stills are cheap; video is expensive). You approve the look.
+4. **Build the motion** — entrances, transitions, camera moves, sound on the hits, visuals synced to narration cues.
+5. **Render & review loop** — `render.mjs` seeks headless Chromium to every frame in parallel workers, pipes the screenshots into ffmpeg, mixes and loudness-normalizes the audio, then produces a **contact sheet** Claude reads, a **layout audit** (clipped / overlapping / tiny text, missing fonts and glyphs) and a **determinism check** (same `t` → same pixels), plus **QA** on the MP4 (black or frozen stretches, photosensitive flashing, loudness). Claude fixes what it finds and re-renders.
+6. **Deliver** — MP4 (or GIF preview, or a ProRes 4444 MOV with alpha for compositing).
+
+**Seven built-in styles** — each with a palette, vendored open-source fonts, textures, a motion language, a default music bed and a style guide:
+
+| Style | Look |
+|-------|------|
+| `cut-paper` | layered construction paper, soft shadows, kraft texture, stop-motion step |
+| `cross-hatch` | ink engraving on ivory, hatched shading, boiling lines, serif italics |
+| `risograph` | fluorescent spot inks overprinted, grain, misregistration, zine type |
+| `sketchbook` | ballpoint + marker on graph paper, drawn-on doodles, handwriting |
+| `isometric` | pastel 30° blocks, three-tone shading, grids |
+| `chalkboard` | dark board, chalk strokes, equations (KaTeX) and plots — or clean vector on dark |
+| `kinetic-type` | huge condensed type cut to the beat, one hot accent |
+
+Custom looks start from the closest preset plus your references: `palette.py` pulls exact colors from a reference image, and the sibling `/watch` skill breaks down a reference video's structure and pacing so Claude can recreate the *feel* with your content (never its assets).
+
+**Sound is code too.** Procedural music beds (pads, arpeggios, bass, drums) and effects (whoosh, pop, click, chime, riser, impact, typing) are scheduled in the composition and rendered offline. Narration comes from `tts.py` — ElevenLabs (best, returns word timings), OpenAI TTS, or local `say` / Piper / espeak-ng — or from your own recording via `align.py` (faster-whisper, Whisper API, or an estimate). Music is ducked under the voice and the mix normalized to −14 LUFS. Burned-in captions and SRT files come from the same word timings.
+
+### Requirements and keys
+
+| Capability | What you need | Cost |
+|------------|---------------|------|
+| Rendering | Node 18+, ffmpeg; `setup.py` installs `playwright-core`, 14 OFL fonts, KaTeX and headless Chromium into `~/.cache/make-video` | Free |
+| Music + sound effects | nothing (code) | Free |
+| Narration (best) | `ELEVENLABS_API_KEY` in `~/.config/make-video/.env` | Paid API |
+| Narration (alt) | `OPENAI_API_KEY` | Paid API |
+| Narration (offline) | macOS `say`, Piper (`PIPER_MODEL`), or espeak-ng | Free |
+| Word timings for your own recording | `setup.py --with-whisper` (local) or `GROQ_API_KEY` / `OPENAI_API_KEY` (shared with /watch) | Free / cheap |
+
+### Under the hood
+
+```bash
+python3 skills/make-video/scripts/setup.py                       # one-time runtime install (idempotent)
+python3 skills/make-video/scripts/new_project.py tides --style chalkboard --aspect 16:9
+node skills/make-video/scripts/render.mjs storyboard tides       # numbered storyboard sheet
+node skills/make-video/scripts/render.mjs audit tides            # layout + determinism audit
+node skills/make-video/scripts/render.mjs video tides --draft    # fast half-res render + contact sheet + QA
+node skills/make-video/scripts/render.mjs video tides            # final render
+node skills/make-video/scripts/render.mjs serve tides            # live preview with a scrubber
+```
+
+Projects are self-contained folders (`index.html` + a copy of the runtime in `lib/`, vendored fonts, `assets/`, `out/`), so they keep rendering identically after the skill updates. Templates: `starter` (adapts to any style), `explainer` (a narrated multi-scene chalkboard explainer that times scenes from narration cues), `style-reel` (one vignette per style).
+
+### Limits
+
+- Rendering speed depends on the scene: roughly 10–25 frames/s at 1080p on 4 CPU cores, so a 30 s video takes 1–3 minutes. Use `--draft` while iterating.
+- Headless Chromium can't decode H.264, so footage is converted to WebM first (`media.py clip`).
+- The agent reviews frames, not motion: contact sheets, stills and the audits catch layout and timing problems; watch the final MP4 yourself for feel.
+
 ## Structure
 
 ```
 .
+├── skills/make-video/            # /make-video — self-contained skill
+│   ├── SKILL.md                  # workflow contract: intake → story → storyboard → build → review → deliver
+│   ├── references/               # composition API, craft, audio, review checklist, styles/<name>.md
+│   ├── runtime/                  # mv.js (timeline, motion, audit, preview), mv-draw.js, mv-audio.js, mv-themes.js
+│   ├── templates/                # starter, explainer, style-reel
+│   └── scripts/
+│       ├── render.mjs            # renderer: video / storyboard / stills / sheet / audit / audio / serve
+│       ├── setup.py              # preflight + runtime installer (playwright-core, fonts, KaTeX, Chromium)
+│       ├── new_project.py        # scaffold a project (vendors runtime + fonts)
+│       ├── tts.py, align.py      # narration + word timings
+│       ├── qa.py, media.py, palette.py, mv_env.py
+│       └── build-skill.sh        # build dist/make-video.skill (dev-only)
 ├── skills/watch/                 # self-contained skill — copied as a unit by every installer
 │   ├── SKILL.md                  # skill contract — the source of truth across all surfaces
 │   └── scripts/
@@ -232,14 +317,16 @@ Other knobs (passed to `scripts/watch.py`):
 ## Develop
 
 ```bash
-# Run the test suite (stdlib + pytest; ffmpeg required for frame tests):
+# Run the test suite (stdlib + pytest; ffmpeg required for frame tests;
+# the make-video render tests also need node + `skills/make-video/scripts/setup.py`):
 python3 -m pytest -q
 
-# Build the claude.ai upload bundle:
-bash skills/watch/scripts/build-skill.sh      # → dist/watch.skill
+# Build the claude.ai upload bundles:
+bash skills/watch/scripts/build-skill.sh       # → dist/watch.skill
+bash skills/make-video/scripts/build-skill.sh  # → dist/make-video.skill
 ```
 
-Releasing: tag `vX.Y.Z`, push the tag. The workflow builds `dist/watch.skill` and attaches it to the GitHub release. Keep the version in sync across `skills/watch/SKILL.md`, `.claude-plugin/plugin.json`, and `.codex-plugin/plugin.json`.
+Releasing: tag `vX.Y.Z`, push the tag. The workflow builds both `.skill` bundles and attaches them to the GitHub release. Keep the version in sync across `skills/watch/SKILL.md`, `skills/make-video/SKILL.md`, `.claude-plugin/plugin.json`, and `.codex-plugin/plugin.json`.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
@@ -247,7 +334,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 MIT license.
 
-Built on `yt-dlp`, `ffmpeg`, and Claude's multimodal `Read` tool. Whisper transcription via [Groq](https://groq.com) or [OpenAI](https://openai.com).
+Built on `yt-dlp`, `ffmpeg`, and Claude's multimodal `Read` tool. Whisper transcription via [Groq](https://groq.com) or [OpenAI](https://openai.com). `/make-video` renders with [Playwright](https://playwright.dev) + headless Chromium, typesets math with [KaTeX](https://katex.org), and uses open-source fonts from [Fontsource](https://fontsource.org) (SIL OFL).
 
 Built by Brad Bonanno — I make content about building with AI on [YouTube (@bradbonanno)](https://www.youtube.com/@bradbonanno), and build AI operating systems for businesses at [Solaris Automation](https://www.solarisautomation.io/). If `/watch` saves you from scrubbing through a video, come say hi on the channel.
 

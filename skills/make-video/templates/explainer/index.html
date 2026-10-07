@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="lib/fonts.css">
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<style>
+  .mv-clip { color: var(--ink); }
+  .t { position: absolute; white-space: nowrap; }
+  .say { font: var(--weight-display) var(--size-title)/1.1 var(--font-display); }
+  .big { font: var(--weight-display) var(--size-hero)/1 var(--font-display); }
+  .note { font: 400 var(--size-subtitle)/1.15 var(--font-body); }
+  .label { font: var(--weight-body) var(--size-subtitle)/1.1 var(--font-body); text-align: center; }
+  .cap { font: var(--weight-body) var(--size-body)/1.2 var(--font-body); text-align: center; }
+  .formula { font-size: calc(var(--size-title) * 1.1); }
+  .formula .katex { color: var(--ink); }
+  .code { font: 500 var(--size-body)/1.45 var(--font-mono); white-space: pre; color: var(--ink); }
+  .center { text-align: center; }
+</style>
+</head>
+<body>
+<script type="module">
+// A worked example: a ~35 s chalkboard explainer of how this video was made.
+// Adapt it: keep the structure (scene list → build/render), swap the content.
+// With narration: put the voice in assets/narration.mp3 + assets/narration.words.json
+// (scripts/tts.py --text-file script.txt) and each scene starts on its `cue` phrase.
+import { defineVideo, ease, clamp, lerp, keys, css, h, splitText, typeOn, loadWords, alpha, TAU } from './lib/mv.js';
+import { applyTheme } from './lib/mv-themes.js';
+import { backdrop, chalk, chalkMask, hatch, circlePoints, sketchArrow } from './lib/mv-draw.js';
+import katex from './lib/katex/katex.mjs';
+
+const W = {{WIDTH}}, H = {{HEIGHT}}, FPS = {{FPS}};
+const theme = applyTheme('{{STYLE}}', { width: W, height: H });
+const P = theme.palette;
+const [BLUE, YELLOW, PINK, GREEN, ORANGE] = P.colors;
+const u = Math.min(W, H);
+const portrait = H > W;
+const padX = Math.max(W * 0.075, u * 0.08);
+const px = (k) => Math.round(u * k);
+const IN = 0.45;  // scenes fade in over their first ~0.4 s: start the action after that
+
+// ── chalk helpers ─────────────────────────────────────────────────────────
+const rectPts = (x, y, w, hh) => [[x, y], [x + w, y], [x + w, y + hh], [x, y + hh], [x, y]];
+const chalkRect = (ctx, x, y, w, hh, o) => chalk(ctx, rectPts(x, y, w, hh), o);
+/** Chalk-scribbled fill (hatching in chalk color) instead of a flat vector fill. */
+const chalkFill = (ctx, pts, color, seed = 1, gap = 3) => hatch(ctx, pts, { gap, angle: -30, width: 2.6, color, seed, rough: 0.4 });
+/** A tiny scene — a planet orbiting a sun — that is literally a function of time. */
+function orbit(ctx, cx, cy, r, angle, { p = 1, seed = 1, weight = 1 } = {}) {
+  chalk(ctx, circlePoints(cx, cy, r, 80, r * 0.5), { color: alpha(P.ink, 0.6), width: 2.4 * weight, seed: seed + 1, density: 0.55, progress: p });
+  chalk(ctx, circlePoints(cx, cy, r * 0.2, 32), { color: YELLOW, width: 3.4 * weight, seed, progress: p });
+  if (p < 1) return;
+  const x = cx + Math.cos(angle) * r, y = cy + Math.sin(angle) * r * 0.5, pr = Math.max(4, r * 0.13);
+  chalkFill(ctx, circlePoints(x, y, pr, 24), BLUE, seed + 7, Math.max(2, pr * 0.18));
+  chalk(ctx, circlePoints(x, y, pr, 24), { color: BLUE, width: 2.5 * weight, seed: seed + 9 });
+}
+function text(ctx, str, x, y, { size = px(0.045), color = P.ink, align = 'center', alpha: a = 1 } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= a;
+  ctx.fillStyle = color;
+  ctx.font = `${size}px ${theme.fonts.body}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+/** Chalk check mark. */
+const check = (ctx, x, y, size, p, seed) =>
+  chalk(ctx, [[x - size * 0.5, y], [x - size * 0.15, y + size * 0.4], [x + size * 0.55, y - size * 0.45]], { color: GREEN, width: 7, seed, progress: p });
+const fade = (s, a, b) => s.at(a, b, ease.inOutSine);
+/** Chalk-like write-on for DOM text: per-letter fade + blur. */
+function writeOn(s, el, a, b) {
+  const chars = splitText(el).chars;
+  chars.forEach((c, i) => {
+    const p = clamp((s.t - a - (i / chars.length) * (b - a)) / 0.35);
+    css(c, { opacity: p, blur: (1 - p) * 4 });
+  });
+}
+/** Give a whole scene the dusty chalk texture (text, formula and fills alike). */
+function chalky(el) {
+  if (theme.key !== 'chalkboard') return;
+  const m = chalkMask();
+  css(el, { maskImage: m, webkitMaskImage: m, maskSize: '192px', webkitMaskSize: '192px' });
+}
+
+// ── scenes ────────────────────────────────────────────────────────────────
+// `duration` is used without narration; `cue` (a phrase from script.txt) is used with it.
+const SCENES = [
+  {
+    name: 'hook', duration: 4.6, label: 'Hook', note: '"This video was never filmed." — then "It was written." underlined in chalk; hold.',
+    canvas: true,
+    build(el, s) {
+      chalky(el);
+      el.append(
+        h('div', { class: 't say center', style: { left: 0, width: W, top: H * 0.31 } }, 'This video was never filmed.'),
+        h('div', { class: 't big center', style: { left: 0, width: W, top: H * 0.47, color: YELLOW } }, 'It was written.'),
+      );
+      const range = document.createRange();
+      range.selectNodeContents(el.querySelector('.big'));
+      const w = range.getBoundingClientRect().width / (el.getBoundingClientRect().width / W || 1);
+      s.line = { x: (W - w) / 2, y: H * 0.47 + px(0.17), w };
+    },
+    render(t, s) {
+      writeOn(s, s.$('.say'), 0.15, 1.2);
+      writeOn(s, s.$('.big'), 1.45, 2.2);
+      const { x, y, w } = s.line;
+      chalk(s.ctx, [[x, y], [x + w * 0.5, y + u * 0.006], [x + w, y - u * 0.004]], { color: YELLOW, width: 7, seed: 4, progress: s.at(2.1, 2.8) });
+    },
+  },
+  {
+    name: 'function', duration: 7.2, cue: 'every frame is', label: 'frame = f(t)', note: 't scrubs forward and back; at the same t the frame matches the earlier snapshot exactly.',
+    canvas: true,
+    build(el, s) {
+      chalky(el);
+      const f = h('div', { class: 't formula center', style: { left: 0, width: W, top: H * 0.05 } });
+      katex.render(String.raw`\text{frame} = f(t)`, f, { throwOnError: false });
+      el.append(f);
+      s.main = portrait ? { w: W * 0.8, cx: W / 2, cy: H * 0.34 } : { w: W * 0.4, cx: W * 0.38, cy: H * 0.45 };
+      s.snap = portrait ? { w: W * 0.46, cx: W / 2, cy: H * 0.6 } : { w: W * 0.22, cx: W * 0.79, cy: H * 0.45 };
+      s.main.h = s.main.w * 9 / 16;
+      s.snap.h = s.snap.w * 9 / 16;
+      s.line = { x0: portrait ? W * 0.1 : W * 0.15, x1: portrait ? W * 0.9 : W * 0.85, y: portrait ? H * 0.84 : H * 0.85, max: 8 };
+      el.append(h('div', { class: 't note center', style: { color: PINK, left: s.snap.cx - W * 0.2, width: W * 0.4, top: s.snap.cy + s.snap.h / 2 + u * 0.03 } }, 'same t, same picture'));
+    },
+    render(t, s) {
+      const ctx = s.ctx;
+      css(s.$('.formula'), { clipPath: `inset(-20% ${100 - 100 * s.at(IN, IN + 1.0)}% -20% -5%)` });
+      const { main, snap, line: L } = s;
+      chalkRect(ctx, main.cx - main.w / 2, main.cy - main.h / 2, main.w, main.h, { color: P.ink, width: 4, seed: 2, progress: s.at(IN + 0.4, IN + 1.0) });
+      // Timeline + ticks (tick i appears once the line has reached it).
+      const lineP = s.at(IN + 0.7, IN + 1.4);
+      chalk(ctx, [[L.x0, L.y], [L.x1, L.y]], { color: P.ink, width: 4, seed: 6, progress: lineP });
+      for (let i = 0; i <= L.max; i++) {
+        if (lineP <= 0 || i / L.max > lineP) break;
+        const x = lerp(L.x0, L.x1, i / L.max);
+        chalk(ctx, [[x, L.y - u * 0.014], [x, L.y + u * 0.014]], { color: P.ink, width: 3, seed: 20 + i });
+        text(ctx, String(i), x, L.y + u * 0.05, { size: px(0.042) });
+      }
+      // t scrubs 0 → 6, then back to 2.5.
+      const tm = keys(t, [[IN + 1.5, 0, ease.inOutSine], [IN + 3.6, 6, ease.inOutCubic], [IN + 4.6, 2.5]]);
+      const mx = lerp(L.x0, L.x1, tm / L.max);
+      const show = s.at(IN + 1.3, IN + 1.6);
+      if (show > 0) {
+        const tri = [[mx, L.y - u * 0.022], [mx - u * 0.02, L.y - u * 0.058], [mx + u * 0.02, L.y - u * 0.058]];
+        ctx.save();
+        ctx.globalAlpha = show;
+        chalkFill(ctx, tri, YELLOW, 31, 2.5);
+        ctx.restore();
+        text(ctx, `t = ${tm.toFixed(2)}`, mx, L.y - u * 0.105, { size: px(0.055), color: YELLOW, alpha: show });
+      }
+      orbit(ctx, main.cx, main.cy, main.h * 0.4, -Math.PI / 2 + tm * 1.1, { p: s.at(IN + 0.8, IN + 1.5), seed: 9, weight: 1.4 });
+      // Snapshot taken when t first passes 2.5 — then the frame returns to the very same picture.
+      const snapP = s.at(IN + 2.5, IN + 3.0);
+      if (snapP > 0) {
+        chalkRect(ctx, snap.cx - snap.w / 2, snap.cy - snap.h / 2, snap.w, snap.h, { color: alpha(P.ink, 0.85), width: 3, seed: 41, progress: snapP });
+        if (snapP >= 1) {
+          orbit(ctx, snap.cx, snap.cy, snap.h * 0.4, -Math.PI / 2 + 2.5 * 1.1, { seed: 9, weight: 0.9 });
+          text(ctx, 't = 2.50', snap.cx, snap.cy - snap.h / 2 - u * 0.04, { size: px(0.042), color: YELLOW });
+        }
+      }
+      const same = s.at(IN + 4.7, IN + 5.1);
+      if (same > 0 && !portrait) text(ctx, '=', (main.cx + main.w / 2 + snap.cx - snap.w / 2) / 2, main.cy, { size: px(0.11), color: PINK, alpha: same });
+      css(s.$('.note'), { opacity: same });
+    },
+  },
+  {
+    name: 'frames', duration: 5.8, cue: 'thirty pictures', label: '30 frames a second', note: 'A filmstrip of frames slides past; each shows the orbit a little further on.',
+    canvas: true,
+    build(el, s) {
+      chalky(el);
+      el.append(
+        h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'Thirty pictures every second'),
+        h('div', { class: 't note', style: { left: padX, top: H * 0.77, color: YELLOW } }, `${FPS} fps × ${s.total.toFixed(0)} s = ${s.frames} frames`),
+      );
+    },
+    render(t, s) {
+      const ctx = s.ctx;
+      writeOn(s, s.$('.say'), IN, IN + 0.9);
+      css(s.$('.note'), { opacity: fade(s, IN + 2.2, IN + 2.7) });
+      const fw = portrait ? W * 0.42 : W * 0.2, fh = fw * 9 / 16, gap = fw * 0.12;
+      const cy = H * 0.47, top = cy - fh / 2 - fw * 0.11, bot = cy + fh / 2 + fw * 0.11;
+      const rail = s.at(IN, IN + 0.6);
+      chalk(ctx, [[0, top], [W, top]], { color: P.ink, width: 3, seed: 31, progress: rail });
+      chalk(ctx, [[0, bot], [W, bot]], { color: P.ink, width: 3, seed: 32, progress: rail });
+      // Sprocket holes run the whole strip and scroll with it.
+      const pitch = (fw + gap) / 4, speed = fw * 0.55;
+      const travel = W - s.at(IN, IN + 1.2, ease.outCubic) * W * 0.62 - t * speed;
+      for (let x = (travel % pitch) - pitch; x < W * rail; x += pitch) {
+        ctx.fillStyle = alpha(P.ink, 0.45);
+        ctx.fillRect(x, top + fw * 0.03, fw * 0.08, fw * 0.045);
+        ctx.fillRect(x, bot - fw * 0.075, fw * 0.08, fw * 0.045);
+      }
+      for (let k = 0; k < 16; k++) {
+        const x = travel + k * (fw + gap);
+        if (x > W || x + fw < 0) continue;
+        chalkRect(ctx, x, cy - fh / 2, fw, fh, { color: P.ink, width: 3, seed: 40 + k });
+        orbit(ctx, x + fw / 2, cy, fh * 0.36, -Math.PI / 2 + k * 0.44, { seed: 60 + k, weight: 0.85 });
+        text(ctx, `t = ${(k * 0.4).toFixed(1)}`, x + fw / 2, bot + fw * 0.12, { size: px(0.04) });
+      }
+      text(ctx, '(every 12th frame shown)', W - padX, H * 0.8, { size: px(0.036), color: P.muted, align: 'right', alpha: fade(s, IN + 2.6, IN + 3.0) });
+    },
+  },
+  {
+    name: 'pipeline', duration: 6.0, cue: 'a headless browser', label: 'Render pipeline', note: 'code → browser → ffmpeg → video file; frames flow from the browser into ffmpeg and fill the file.',
+    canvas: true,
+    build(el, s) {
+      chalky(el);
+      const names = ['your code', 'browser', 'ffmpeg', 'video file'];
+      const caps = ['f(t)', 'draws each frame', 'stitches frames', 'MP4'];
+      const colors = [BLUE, GREEN, ORANGE, YELLOW];
+      el.append(h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'How it renders'));
+      s.boxes = names.map((name, i) => {
+        const bw = portrait ? W * 0.6 : W * 0.155, bh = portrait ? H * 0.11 : H * 0.24;
+        const cx = portrait ? W / 2 : W * (0.155 + i * 0.23), cy = portrait ? H * (0.28 + i * 0.165) : H * 0.5;
+        const label = h('div', { class: 't label', style: { left: cx - bw / 2, width: bw, top: cy - bh * (portrait ? 0.3 : 0.36), color: colors[i] } }, name);
+        const cap = h('div', { class: 't cap', style: { left: cx - bw * 0.75, width: bw * 1.5, top: cy + bh / 2 + u * 0.025 } }, caps[i]);
+        el.append(label, cap);
+        return { cx, cy, bw, bh, color: colors[i], label, cap };
+      });
+    },
+    render(t, s) {
+      const ctx = s.ctx;
+      writeOn(s, s.$('.say'), IN, IN + 0.8);
+      const B = s.boxes;
+      B.forEach((b, i) => {
+        const at = IN + 0.3 + i * 0.5;
+        chalkRect(ctx, b.cx - b.bw / 2, b.cy - b.bh / 2, b.bw, b.bh, { color: b.color, width: 4, seed: 70 + i, progress: s.at(at, at + 0.5) });
+        css(b.label, { opacity: s.at(at + 0.3, at + 0.6) });
+        css(b.cap, { opacity: s.at(at + 0.5, at + 0.9) });
+        if (i < 3) {
+          const n = B[i + 1];
+          const [x1, y1, x2, y2] = portrait
+            ? [b.cx, b.cy + b.bh / 2 + u * 0.012, n.cx, n.cy - n.bh / 2 - u * 0.012]
+            : [b.cx + b.bw / 2 + u * 0.014, b.cy, n.cx - n.bw / 2 - u * 0.014, n.cy];
+          sketchArrow(ctx, x1, y1, x2, y2, { color: P.ink, width: 3.5, curve: 0, head: u * 0.02, seed: 80 + i, rough: 0.6, passes: 1, progress: s.at(at + 0.4, at + 0.7) });
+        }
+      });
+      // Frames flow from the browser into ffmpeg; the video file fills up.
+      const flow = IN + 2.6;
+      if (t > flow) {
+        const [b1, b2, b3] = [B[1], B[2], B[3]];
+        const fw = u * 0.055, fh = fw * 0.56;
+        for (let k = 0; k < 4; k++) {
+          const q = ((t - flow) / 1.2 + k / 4) % 1;
+          const x = portrait ? b1.cx : lerp(b1.cx, b2.cx, q);
+          const y = portrait ? lerp(b1.cy, b2.cy, q) : b1.cy + b1.bh * 0.24;
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, (t - flow) * 3) * Math.sin(Math.PI * q);
+          chalkRect(ctx, x - fw / 2, y - fh / 2, fw, fh, { color: YELLOW, width: 2.5, seed: 200 + k });
+          ctx.restore();
+        }
+        // ffmpeg's growing stack of frames.
+        const stack = Math.min(5, Math.floor((t - flow) / 0.5) + 1);
+        for (let k = 0; k < stack; k++) {
+          const x = b2.cx - fw / 2 + k * u * 0.006, y = b2.cy + b2.bh * 0.24 - k * u * 0.006;
+          chalkRect(ctx, x - fw * 0.2, y - fh / 2, fw * 1.4, fh, { color: alpha(ORANGE, 0.9), width: 2.5, seed: 220 + k });
+        }
+        // The MP4 fills.
+        const fill = s.at(flow + 0.3, s.d - 0.6, ease.linear);
+        const bx = b3.cx - b3.bw * 0.38, by = b3.cy + b3.bh * 0.16, bw = b3.bw * 0.76, bh = b3.bh * 0.16;
+        chalkRect(ctx, bx, by, bw, bh, { color: YELLOW, width: 2.5, seed: 240 });
+        if (fill > 0.02) chalkFill(ctx, [[bx, by], [bx + bw * fill, by], [bx + bw * fill, by + bh], [bx, by + bh]], YELLOW, 241, 4);
+      }
+    },
+  },
+  {
+    name: 'sound', duration: 6.6, cue: 'the sound is code', label: 'Sound is code', note: 'A waveform traces across while the audio() code types on; hold so it can be read.',
+    canvas: true,
+    build(el) {
+      chalky(el);
+      el.append(
+        h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'The sound is code too'),
+        h('div', { class: 't code', style: { left: padX, top: portrait ? H * 0.66 : H * 0.64 } }),
+      );
+    },
+    render(t, s) {
+      const ctx = s.ctx;
+      writeOn(s, s.$('.say'), IN, IN + 0.8);
+      const x0 = padX, x1 = W - padX, y = portrait ? H * 0.45 : H * 0.43, amp = H * 0.1;
+      const n = 260;
+      const wave = (k, phase) => Array.from({ length: n }, (_, i) => {
+        const x = i / (n - 1);
+        const env = Math.sin(Math.PI * x) * (0.6 + 0.4 * Math.sin(x * 9 + phase));
+        return [lerp(x0, x1, x), y - env * amp * k * (Math.sin(x * 46 + phase * 3) * 0.7 + Math.sin(x * 17 - phase) * 0.3)];
+      });
+      chalk(ctx, wave(1, t * 1.5), { color: BLUE, width: 4.5, seed: 91, progress: s.at(IN + 0.3, IN + 2.0, ease.linear) });
+      chalk(ctx, wave(0.45, t * 1.5 + 2), { color: PINK, width: 3.5, seed: 92, progress: s.at(IN + 0.6, IN + 2.3, ease.linear), density: 0.7 });
+      typeOn(s.$('.code'), "audio(a) {\n  a.pad({ chords: ['Am9', 'Fmaj7'] });\n  a.whoosh(2.4);\n}", s.at(IN + 1.0, IN + 3.6, ease.linear), { caret: '|', t });
+    },
+  },
+  {
+    name: 'review', duration: 7.0, cue: 'then it checks', label: 'Review loop', note: 'Contact sheet draws in; one frame is boxed and labelled, fixed, re-rendered, checked.',
+    canvas: true,
+    build(el, s) {
+      chalky(el);
+      el.append(h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'Then it checks its own work'));
+      const cols = portrait ? 3 : 4, rows = portrait ? 4 : 3;
+      const gridW = portrait ? W * 0.84 : W * 0.5;
+      const gap = u * 0.022;
+      const cw = (gridW - gap * (cols - 1)) / cols, ch = cw * 9 / 16;
+      const x0 = padX, y0 = portrait ? H * 0.22 : H * 0.3;
+      s.cells = Array.from({ length: cols * rows }, (_, i) => ({ x: x0 + (i % cols) * (cw + gap), y: y0 + Math.floor(i / cols) * (ch + gap), w: cw, h: ch }));
+      s.bad = portrait ? 4 : 6;
+      const bad = s.cells[s.bad];
+      const nx = portrait ? padX : x0 + gridW + u * 0.07;
+      const ny = (k) => (portrait ? y0 + rows * (ch + gap) + u * 0.03 + k * u * 0.085 : bad.y + bad.h / 2 - u * 0.04 + (k - 1) * u * 0.1);
+      s.notes = [
+        h('div', { class: 't note', style: { left: nx, top: ny(0), color: PINK } }, 'frame 0:12: text cut off'),
+        h('div', { class: 't note', style: { left: nx, top: ny(1), color: YELLOW } }, 'fix it, render again'),
+        h('div', { class: 't note', style: { left: nx + u * 0.08, top: ny(2), color: GREEN } }, 'clean'),
+      ];
+      s.checkAt = { x: nx + u * 0.03, y: ny(2) + u * 0.035 };
+      el.append(...s.notes);
+    },
+    render(t, s) {
+      const ctx = s.ctx;
+      writeOn(s, s.$('.say'), IN, IN + 0.8);
+      s.cells.forEach((c, i) => {
+        const p = s.at(IN + 0.2 + i * 0.07, IN + 0.5 + i * 0.07);
+        chalkRect(ctx, c.x, c.y, c.w, c.h, { color: alpha(P.ink, 0.85), width: 2.5, seed: 100 + i, progress: p });
+        if (p >= 1) orbit(ctx, c.x + c.w / 2, c.y + c.h / 2, c.h * 0.32, -Math.PI / 2 + i * 0.5, { seed: 120 + i, weight: 0.6 });
+      });
+      const bad = s.cells[s.bad];
+      const fixedAt = IN + 3.6;
+      // The faulty frame: a caption poking past its right edge — until the fix.
+      if (t > IN + 1.0 && t < fixedAt) {
+        const bar = [[bad.x + bad.w * 0.5, bad.y + bad.h * 0.72], [bad.x + bad.w + u * 0.012, bad.y + bad.h * 0.72], [bad.x + bad.w + u * 0.012, bad.y + bad.h * 0.84], [bad.x + bad.w * 0.5, bad.y + bad.h * 0.84]];
+        chalkFill(ctx, bar, PINK, 130, 3);
+      }
+      const ring = s.at(IN + 1.5, IN + 2.0) * (1 - s.at(fixedAt, fixedAt + 0.2));
+      if (ring > 0) chalkRect(ctx, bad.x - u * 0.012, bad.y - u * 0.012, bad.w + u * 0.024, bad.h + u * 0.024, { color: PINK, width: 5, seed: 140, progress: ring });
+      css(s.notes[0], { opacity: fade(s, IN + 1.9, IN + 2.3) });
+      css(s.notes[1], { opacity: fade(s, IN + 2.8, IN + 3.2) });
+      css(s.notes[2], { opacity: fade(s, IN + 4.0, IN + 4.4) });
+      if (t > fixedAt) check(ctx, bad.x + bad.w * 0.5, bad.y + bad.h * 0.5, u * 0.075, s.at(fixedAt + 0.1, fixedAt + 0.5), 150);
+      check(ctx, s.checkAt.x, s.checkAt.y, u * 0.045, s.at(IN + 4.0, IN + 4.4), 151);
+    },
+  },
+  {
+    name: 'outro', duration: 4.2, cue: ['every frame', 2], label: 'Outro', note: '/make-video title with the orbit still turning; hold.',
+    canvas: true,
+    build(el) {
+      chalky(el);
+      el.append(
+        h('div', { class: 't big center', style: { left: 0, width: W, top: H * 0.46 } }, '/make-video'),
+        h('div', { class: 't say center', style: { left: 0, width: W, top: H * 0.65, color: YELLOW, fontSize: `${px(0.075)}px` } }, 'every frame is f(t)'),
+      );
+    },
+    render(t, s) {
+      orbit(s.ctx, W / 2, H * 0.29, u * 0.13, -Math.PI / 2 + s.T * 1.1, { seed: 160, weight: 1.4, p: s.at(IN, IN + 0.7) });
+      writeOn(s, s.$('.big'), IN, IN + 0.9);
+      css(s.$('.say'), { opacity: fade(s, IN + 1.0, IN + 1.5) });
+    },
+  },
+];
+
+defineVideo(async () => {
+  const vo = await loadWords('assets/narration.words.json', { optional: true });
+  let scenes = SCENES;
+  let duration;
+  if (vo) {
+    // Narrated: every scene (after the first) starts 0.4 s before its cue phrase.
+    scenes = SCENES.map((sc, i) => {
+      if (i === 0) return { ...sc, duration: undefined, start: 0 };
+      const [phrase, n] = Array.isArray(sc.cue) ? sc.cue : [sc.cue, 1];
+      return { ...sc, duration: undefined, start: Math.max(0, vo.cue(phrase, n) - 0.4) };
+    });
+    duration = vo.duration + 1.6;
+  }
+  return {
+    title: '{{TITLE}}',
+    width: W, height: H, fps: FPS,
+    background: P.bg,
+    duration,
+    transition: theme.motion.transition,
+    layers: [{ name: 'board', under: true, canvas: true, render(t, s) { backdrop(s.ctx, theme, t, W, H, { motif: false }); } }],
+    scenes,
+    tracks: vo ? [{ src: 'assets/narration.mp3', role: 'voice' }] : [],
+    audio(a) {
+      const m = theme.music;
+      a.pad({ chords: m.chords, every: m.every, gain: 0.13, cutoff: 1300 });
+      for (const sc of a.scenes.slice(1)) a.whoosh(sc.start - 0.1, { gain: 0.2, dur: 0.8 });
+      const f = a.scene('function').start;
+      a.chime(f + IN + 0.4, { note: 'A5', gain: 0.12 });
+      a.chime(f + IN + 4.75, { note: 'E6', gain: 0.12 });
+      const pipe = a.scene('pipeline').start;
+      ['C6', 'E6', 'G6', 'C7'].forEach((note, i) => a.blip(pipe + IN + 0.35 + i * 0.5, { note, gain: 0.13 }));
+      const snd = a.scene('sound').start;
+      a.typing(snd + IN + 1.0, { dur: 2.6, rate: 12, gain: 0.09 });
+      const rev = a.scene('review').start;
+      a.click(rev + IN + 1.5, { gain: 0.22, tone: 1800 });
+      a.success(rev + IN + 3.7, { gain: 0.15 });
+      const out = a.scene('outro').start;
+      a.riser(out - 1.4, { dur: 1.4, gain: 0.13 });
+      a.impact(out + 0.1, { gain: 0.32 });
+      a.sparkle(out + IN + 1.0, { dur: 0.7, gain: 0.06 });
+    },
+  };
+});
+</script>
+</body>
+</html>

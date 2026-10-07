@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="lib/fonts.css">
+<style>
+  .mv-clip { position: absolute; }
+  .name { position: absolute; left: 7%; bottom: 11%; white-space: nowrap; }
+  .tag { position: absolute; left: 7%; bottom: 7%; white-space: nowrap; }
+  .card-title { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; white-space: nowrap; }
+</style>
+</head>
+<body>
+<script type="module">
+// Style reel: one ~3.6 s vignette per preset, each built from that style's
+// signature techniques. Read a vignette as a recipe for the style.
+import { defineVideo, ease, clamp, lerp, css, h, splitText, stepTime, hash, alpha, TAU } from './lib/mv.js';
+import { themes } from './lib/mv-themes.js';
+import {
+  backdrop, paperShape, blobPoints, circlePoints, starPoints, hatch, sketch, sketchCircle, sketchArrow, sketchRect,
+  risoLayer, halftone, iso, chalk, boil, roundRect,
+} from './lib/mv-draw.js';
+
+const W = {{WIDTH}}, H = {{HEIGHT}}, FPS = {{FPS}};
+const u = Math.min(W, H);
+const SEG = 3.6;
+const fsz = (k) => `${Math.round(u * k)}px`;
+
+/** Title + tagline in the theme's fonts, bottom-left, with the theme's entrance. */
+function label(el, th, name, tag) {
+  const n = h('div', { class: 'name', style: { font: `${th.weights?.display ?? 800} ${fsz(0.1)}/1 ${th.fonts.display}`, color: th.palette.ink } }, name);
+  const tg = h('div', { class: 'tag', style: { font: `${th.weights?.body ?? 500} ${fsz(0.034)}/1 ${th.fonts.body}`, color: th.palette.muted } }, tag);
+  el.append(n, tg);
+  splitText(n);
+  if (th.key === 'kinetic-type') n.querySelectorAll('.mv-word').forEach((w) => css(w, { overflow: 'hidden', verticalAlign: 'top' }));
+}
+function animateLabel(s, th, { stepped = false } = {}) {
+  const t = stepped ? stepTime(s.t, 12) : s.t;
+  splitText(s.$('.name')).chars.forEach((c, i) => {
+    const p = clamp((t - 0.35 - i * 0.04) / 0.45);
+    if (th.key === 'kinetic-type') css(c, { y: `${(1 - ease.outExpo(p)) * 100}%`, opacity: 1 });
+    else css(c, { y: (1 - ease.outBack(p)) * 40, opacity: clamp(p * 3) });
+  });
+  css(s.$('.tag'), { opacity: s.at(0.9, 1.3), x: (1 - s.at(0.9, 1.4, ease.outCubic)) * -20 });
+}
+const vignette = (key, tag, draw, extra = {}) => ({
+  name: key, duration: SEG, label: themes[key].name, note: tag, canvas: true,
+  build(el) { el.style.background = themes[key].palette.bg; label(el, themes[key], themes[key].name, tag); },
+  render(t, s) {
+    const th = themes[key];
+    backdrop(s.ctx, th, t, W, H, { motif: false });
+    draw(s.ctx, t, s, th);
+    animateLabel(s, th, extra);
+  },
+});
+
+const scenes = [
+  {
+    name: 'intro', duration: 2.6, label: 'Intro', note: 'Seven looks, one runtime.',
+    build(el) {
+      el.style.background = '#111114';
+      el.append(h('div', { class: 'card-title', style: { font: `400 ${fsz(0.12)}/1 'Anton', sans-serif`, color: '#f2f0ea', textTransform: 'uppercase' } }, 'Seven styles'),
+        h('div', { class: 'card-title', style: { top: '64%', font: `500 ${fsz(0.036)}/1 'Inter', sans-serif`, color: '#9a9aa6' } }, 'one function of time'));
+      splitText(el.querySelector('.card-title'));
+    },
+    render(t, s) {
+      const [big, small] = s.$$('.card-title');
+      splitText(big).chars.forEach((c, i) => css(c, { y: `${(1 - ease.outExpo(clamp((t - 0.1 - i * 0.04) / 0.4))) * 110}%` }));
+      big.querySelectorAll('.mv-word').forEach((w) => css(w, { overflow: 'hidden', verticalAlign: 'top' }));
+      css(small, { opacity: s.at(0.8, 1.2), x: '-50%', y: '-50%' });
+    },
+  },
+  vignette('cut-paper', 'construction paper, real shadows, shot on twos', (ctx, t, s, th) => {
+    const C = th.palette.colors, ts = stepTime(t, 12);
+    const hill = (x, y, r, c, seed, delay) => {
+      const p = ease.outBack(clamp((ts - delay) / 0.5));
+      paperShape(ctx, blobPoints(x, y + (1 - p) * H * 0.4, r, { seed, wobble: 0.07 }), { color: c, seed, dy: 10 });
+    };
+    hill(W * 0.15, H * 1.12, u * 0.42, C[4], 3, 0.0);
+    hill(W * 0.95, H * 1.1, u * 0.45, C[3], 7, 0.12);
+    hill(W * 0.6, H * 1.22, u * 0.4, C[1], 5, 0.24);
+    const sunP = ease.outBack(clamp((ts - 0.45) / 0.6));
+    paperShape(ctx, starPoints(W * 0.72, H * 0.32, u * 0.14 * sunP + 1, u * 0.1 * sunP + 1, 12, ts * 0.4), { color: C[0], seed: 11 });
+    paperShape(ctx, circlePoints(W * 0.72, H * 0.32, u * 0.085 * sunP + 1, 40), { color: C[1], seed: 12 });
+    for (let i = 0; i < 3; i++) {
+      const x = W * (0.3 + i * 0.12) + Math.sin(ts * 0.8 + i) * u * 0.02, y = H * (0.22 + (i % 2) * 0.08);
+      paperShape(ctx, blobPoints(x, y, u * 0.05, { seed: 20 + i, wobble: 0.25, n: 24 }), { color: C[6], seed: 20 + i, blur: 10, dy: 6 });
+    }
+  }, { stepped: true }),
+  vignette('cross-hatch', 'ink, hatching and a single red accent', (ctx, t, s, th) => {
+    const sd = boil(t, 8), ink = th.palette.ink;
+    const cx = W * 0.68, cy = H * 0.42, r = u * 0.2;
+    const draw = s.at(0.05, 0.9);
+    sketchCircle(ctx, cx, cy, r, { color: ink, width: 3, seed: sd, progress: draw });
+    hatch(ctx, circlePoints(cx + r * 0.25, cy + r * 0.2, r * 0.82, 48), { gap: 7, angle: -40, cross: true, color: ink, seed: sd, width: 1.3, progress: s.at(0.6, 1.8) });
+    hatch(ctx, circlePoints(cx, cy, r, 48), { gap: 11, angle: -40, color: ink, seed: sd + 3, width: 1.1, progress: s.at(0.4, 1.4), alpha: 0.6 });
+    sketch(ctx, [[W * 0.08, H * 0.62], [W * 0.98, H * 0.62]], { color: ink, width: 2.2, seed: sd + 5, progress: s.at(0.2, 1.0) });
+    sketchArrow(ctx, W * 0.42, H * 0.2, cx - r * 0.95, cy - r * 0.35, { color: th.palette.accent, width: 3.5, curve: -0.25, seed: sd + 7, progress: s.at(1.4, 2.1) });
+  }),
+  vignette('risograph', 'spot inks, overprint, grain and misregistration', (ctx, t, s, th) => {
+    const k = boil(t, 6), reg = 5;
+    const off = (i) => [(hash(k, i) - 0.5) * reg * 2, (hash(k, i, 1) - 0.5) * reg * 2];
+    const slide = (d) => ease.snappy(s.at(0.05 + d, 0.6 + d, ease.linear));
+    risoLayer(ctx, '#0078bf', (lc) => {
+      lc.beginPath(); lc.arc(W * 0.58 - (1 - slide(0)) * W * 0.3, H * 0.4, u * 0.24, 0, TAU); lc.fill();
+      halftone(lc, W * 0.45, H * 0.05, W * 0.5, H * 0.6, { value: (a, b) => 1 - b, cell: 16, color: '#0078bf', max: 0.55 });
+    }, { w: W, h: H, offset: off(0), key: 0, seed: 3 });
+    risoLayer(ctx, '#ff48b0', (lc) => {
+      lc.beginPath(); lc.arc(W * 0.76 + (1 - slide(0.12)) * W * 0.3, H * 0.4, u * 0.24, 0, TAU); lc.fill();
+      for (let i = 0; i < 6; i++) lc.fillRect(W * 0.42, H * (0.66 + i * 0.03), W * 0.5 * slide(0.3 + i * 0.05), H * 0.012);
+    }, { w: W, h: H, offset: off(1), key: 1, seed: 5 });
+  }),
+  vignette('sketchbook', 'graph paper, drawn-on lines, marker and highlighter', (ctx, t, s, th) => {
+    const sd = boil(t, 6), ink = th.palette.ink, C = th.palette.colors;
+    const bx = W * 0.5, by = H * 0.18, bw = W * 0.18, bh = H * 0.2;
+    sketchRect(ctx, bx, by, bw, bh, { color: ink, width: 3.2, seed: sd, progress: s.at(0.05, 0.7) });
+    sketchRect(ctx, bx + bw * 1.5, by + bh * 0.8, bw, bh, { color: ink, width: 3.2, seed: sd + 4, progress: s.at(0.5, 1.1) });
+    sketchArrow(ctx, bx + bw + u * 0.02, by + bh * 0.5, bx + bw * 1.5 - u * 0.02, by + bh * 1.3, { color: C[1], width: 4.5, curve: -0.3, seed: sd + 8, progress: s.at(1.0, 1.5) });
+    const hp = s.at(1.4, 1.9);
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = C[0];
+    ctx.fillRect(bx + bw * 0.12, by + bh * 0.4, bw * 0.76 * hp, bh * 0.24);
+    ctx.restore();
+    sketch(ctx, starPoints(W * 0.86, H * 0.12, u * 0.05, u * 0.022), { closed: true, color: C[1], width: 3.5, seed: sd + 2, progress: s.at(1.6, 2.2) });
+  }),
+  vignette('isometric', 'thirty-degree blocks, three-tone shading', (ctx, t, s, th) => {
+    const C = th.palette.colors;
+    const I = iso(W * 0.66, H * 0.56, u * 0.07);
+    I.grid(ctx, 8, 8, { x0: -4, y0: -4, color: alpha(th.palette.ink, 0.1) });
+    const cells = [];
+    for (let x = -2; x <= 2; x++) for (let y = -2; y <= 2; y++) if ((x + y + 9) % 2 === 0 || (x === 0 && y === 0)) cells.push([x, y]);
+    cells.sort((a, b) => a[0] + a[1] - (b[0] + b[1]));
+    cells.forEach(([x, y], i) => {
+      const p = ease.outBack(s.at(0.1 + (x + y + 4) * 0.08, 0.7 + (x + y + 4) * 0.08, ease.linear));
+      const hgt = (1 + 2.2 * hash(x, y)) * p;
+      if (hgt <= 0.01) return;
+      I.shadow(ctx, x, y, 1, 1, { color: alpha(th.palette.ink, 0.12) });
+      I.box(ctx, x, y, 0, 1, 1, hgt, { color: C[(i * 3) % C.length] });
+    });
+  }),
+  vignette('chalkboard', 'chalk on slate, plots and equations that write themselves', (ctx, t, s, th) => {
+    const C = th.palette.colors, ink = th.palette.ink;
+    const x0 = W * 0.48, y0 = H * 0.62, gw = W * 0.44, gh = H * 0.44;
+    chalk(ctx, [[x0, y0], [x0 + gw, y0]], { color: ink, width: 4, seed: 1, progress: s.at(0.05, 0.5) });
+    chalk(ctx, [[x0, y0 + gh * 0.1], [x0, y0 - gh]], { color: ink, width: 4, seed: 2, progress: s.at(0.2, 0.6) });
+    const curve = (k, ph) => Array.from({ length: 140 }, (_, i) => { const x = i / 139; return [x0 + x * gw, y0 - gh * 0.5 - Math.sin(x * TAU * k + ph) * gh * 0.32 * (1 - x * 0.4)]; });
+    chalk(ctx, curve(1.5, 0), { color: C[0], width: 5, seed: 3, progress: s.at(0.6, 1.8, ease.inOutSine) });
+    chalk(ctx, curve(1.5, 1.4), { color: C[2], width: 4, seed: 4, progress: s.at(1.0, 2.2, ease.inOutSine) });
+    const p = s.at(1.8, 3.2, ease.inOutSine);
+    const px = x0 + p * gw, py = y0 - gh * 0.5 - Math.sin(p * TAU * 1.5) * gh * 0.32 * (1 - p * 0.4);
+    ctx.fillStyle = C[1];
+    ctx.globalAlpha = s.at(1.8, 2.0);
+    ctx.beginPath(); ctx.arc(px, py, u * 0.012, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }),
+  vignette('kinetic-type', 'huge type, masks, cuts on the beat', (ctx, t, s, th) => {
+    const words = ['MAKE', 'IT', 'MOVE'];
+    const spb = 60 / 120;
+    const k = Math.min(words.length - 1, Math.floor(t / (spb * 2)));
+    const ph = (t - k * spb * 2) / (spb * 2);
+    ctx.save();
+    ctx.font = `400 ${Math.round(H * 0.42)}px 'Anton', sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    const y = H * 0.62;
+    const rise = (1 - ease.outExpo(clamp(ph * 3))) * H * 0.42;
+    ctx.beginPath();
+    ctx.rect(0, y - H * 0.42, W, H * 0.46);
+    ctx.clip();
+    ctx.fillStyle = k === 1 ? th.palette.accent : th.palette.ink;
+    ctx.fillText(words[k], W * 0.94, y + rise);
+    ctx.restore();
+    ctx.fillStyle = th.palette.accent;
+    ctx.fillRect(W * 0.07, H * 0.12, W * 0.86 * ease.outExpo(s.at(0, 0.6, ease.linear)), H * 0.012);
+  }),
+  {
+    name: 'outro', duration: 2.8, label: 'Outro', note: 'Pick one — or bring a reference.',
+    build(el) {
+      el.style.background = '#111114';
+      el.append(h('div', { class: 'card-title', style: { font: `400 ${fsz(0.09)}/1.1 'Anton', sans-serif`, color: '#f2f0ea', textTransform: 'uppercase' } }, 'Pick a style'),
+        h('div', { class: 'card-title', style: { top: '64%', font: `500 ${fsz(0.036)}/1 'Inter', sans-serif`, color: '#9a9aa6' } }, '…or bring a reference'));
+    },
+    render(t, s) {
+      const [big, small] = s.$$('.card-title');
+      css(big, { opacity: s.at(0, 0.4), x: '-50%', y: '-50%', scale: 1 + 0.03 * s.p });
+      css(small, { opacity: s.at(0.6, 1.0), x: '-50%', y: '-50%' });
+    },
+  },
+];
+
+defineVideo({
+  title: '{{TITLE}}',
+  width: W, height: H, fps: FPS,
+  background: '#111114',
+  transition: { type: 'wipe-right', duration: 0.5, edge: '#f2f0ea', edgeWidth: Math.round(u * 0.012) },
+  scenes,
+  audio(a) {
+    a.drums({ bpm: 120, gain: 0.18, kick: 'x...x...x...x...', snare: '....x.......x...', hat: '..x...x...x...x.' });
+    a.bass({ chords: ['Am', 'F', 'C', 'G'], every: 2, bpm: 120, gain: 0.16 });
+    a.pad({ chords: ['Am', 'F', 'C', 'G'], every: 2, gain: 0.08 });
+    for (const sc of a.scenes.slice(1)) a.swish(sc.start + 0.05, { gain: 0.3 });
+    a.impact(a.scene('kinetic-type').start, { gain: 0.3 });
+  },
+});
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 {
   "name": "claude-video",
   "metadata": {
-    "description": "Give Claude a video input. /watch downloads, extracts frames, transcribes, and hands it all to Claude."
+    "description": "Give Claude video input and output. /watch downloads, extracts frames and transcribes; /make-video renders motion graphics and explainers from code."
   },
   "owner": {
     "name": "Bradley Bonanno"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "watch",
-      "description": "Watch a video (URL or local path). Downloads with yt-dlp, extracts frames with ffmpeg, transcribes via captions or Whisper.",
+      "description": "Watch a video (frames + transcript) and make videos with code: /watch (yt-dlp, ffmpeg, captions/Whisper) and /make-video (JavaScript frames \u2192 headless Chromium \u2192 ffmpeg MP4, narration, music, seven styles).",
       "author": {
         "name": "Bradley Bonanno"
       },

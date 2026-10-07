@@ -1,12 +1,31 @@
 {
   "name": "watch",
-  "version": "0.2.0",
-  "description": "Let Claude watch a video. Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls captions or falls back to Whisper, and hands frames + transcript to Claude so it can answer questions about the video.",
+  "version": "0.3.0",
+  "description": "Give Claude video input and video output. /watch downloads a video, extracts auto-scaled frames with ffmpeg and pulls captions or Whisper transcripts so Claude can answer questions about it. /make-video scripts, storyboards and renders videos as code \u2014 JavaScript frames rendered in headless Chromium and stitched with ffmpeg, with narration, music and sound effects, in seven built-in styles.",
   "author": {
     "name": "Bradley Bonanno"
   },
   "homepage": "https://github.com/bradautomates/claude-video",
   "repository": "https://github.com/bradautomates/claude-video",
   "license": "MIT",
-  "keywords": ["video", "watch", "youtube", "vimeo", "tiktok", "transcription", "whisper", "yt-dlp", "ffmpeg", "multimodal", "frames"]
+  "keywords": [
+    "video",
+    "watch",
+    "youtube",
+    "vimeo",
+    "tiktok",
+    "transcription",
+    "whisper",
+    "yt-dlp",
+    "ffmpeg",
+    "multimodal",
+    "frames",
+    "make-video",
+    "motion-graphics",
+    "animation",
+    "explainer",
+    "playwright",
+    "storyboard",
+    "text-to-speech"
+  ]
 }

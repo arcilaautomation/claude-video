@@ -1,0 +1,13 @@
+This video was never filmed. It was written.
+
+Every frame is a function of time. Give it a moment, t, and it draws one picture.
+
+Thirty pictures every second, played in order, become motion.
+
+A headless browser draws each frame, and ffmpeg stitches them into a video file.
+
+The sound is code too, scheduled on the same clock.
+
+Then it checks its own work: a contact sheet, a list of problems, a fix, and a fresh render.
+
+Every frame, a function of time.

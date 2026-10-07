@@ -1,6 +1,20 @@
 # Changelog
 
-All notable changes to `/watch` are documented here.
+All notable changes to `/watch` and `/make-video` are documented here.
+
+## [0.3.0] — Unreleased
+
+### Added
+- **`/make-video` skill** — Claude makes videos with code. A guided workflow (intake → story → storyboard → build → render/review loop → deliver) where every frame is a JavaScript function of time, rendered in headless Chromium and encoded with ffmpeg.
+  - **Runtime** (`runtime/mv.js`): scenes and layers with transitions (fade, dip, push, cover, wipe with edge, iris, zoom, blur), easing library (Penner, cubic-bezier, springs), keyframes, OKLab color mixing, seeded rng/Perlin noise, split-text/fit-text/type-on/count-up/SVG draw-on helpers, narration cue helpers and word-level captions, seekable WebM video layers, a live preview player with scrubber, and an in-page layout audit.
+  - **Renderer** (`scripts/render.mjs`): parallel browser workers each piping frames into an ffmpeg segment encoder, concatenated losslessly; draft/partial/scaled renders; MP4, GIF, and ProRes 4444 MOV with alpha; storyboard sheets, timeline sheets and labeled contact sheets; layout + determinism audit; procedural audio stems mixed with voice/music/fx tracks, music ducked under voice, two-pass loudness normalization to −14 LUFS; live preview server.
+  - **Seven styles** (`mv-themes.js`, `mv-draw.js`, `references/styles/`): cut paper, cross-hatch, risograph, sketchbook, isometric, chalkboard, kinetic type — palettes, vendored OFL fonts, textures (paper, slate, graph paper, grain), hand-drawn lines, hatching, cut-paper shapes, riso overprint/halftone, isometric projection, chalk strokes, and an original mascot rig.
+  - **Procedural sound** (`mv-audio.js`): pads, arpeggios, bass and drums from chord names; whoosh, pop, click, chime, riser, impact, typing and sparkle effects.
+  - **Narration** (`tts.py`, `align.py`): ElevenLabs (with native timings), OpenAI TTS, macOS `say`, Piper or espeak-ng; word timings via faster-whisper, the Whisper API or a speech-detection estimate, snapped onto the script; SRT captions.
+  - **Tooling**: `setup.py` (runtime installer and preflight), `new_project.py` (self-contained projects with vendored runtime, fonts and KaTeX), `qa.py` (black/frozen/flash/loudness checks and contact sheets for any video), `media.py` (footage → seekable WebM), `palette.py` (reference image → theme palette).
+  - **Templates**: `starter`, `explainer`, `style-reel`.
+- `dist/make-video.skill` bundle and release-workflow support.
+- Tests for the make-video runtime, narration, tooling and end-to-end rendering.
 
 ## [0.2.0] — 2026-06-29
 
