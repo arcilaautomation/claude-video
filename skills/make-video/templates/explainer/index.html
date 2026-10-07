@@ -25,7 +25,7 @@
 // Adapt it: keep the structure (scene list → build/render), swap the content.
 // With narration: put the voice in assets/narration.mp3 + assets/narration.words.json
 // (scripts/tts.py --text-file script.txt) and each scene starts on its `cue` phrase.
-import { defineVideo, ease, clamp, lerp, keys, css, h, splitText, typeOn, loadWords, alpha, TAU } from './lib/mv.js';
+import { defineVideo, ease, clamp, lerp, keys, css, h, splitText, fitText, textLines, typeOn, loadWords, alpha, TAU } from './lib/mv.js';
 import { applyTheme } from './lib/mv-themes.js';
 import { backdrop, chalk, chalkMask, hatch, circlePoints, sketchArrow } from './lib/mv-draw.js';
 import katex from './lib/katex/katex.mjs';
@@ -38,6 +38,16 @@ const u = Math.min(W, H);
 const portrait = H > W;
 const padX = Math.max(W * 0.075, u * 0.08);
 const px = (k) => Math.round(u * k);
+// Safe box for text: 5–8% margins in landscape; in portrait, clear of the social-app UI
+// (top ~11%, bottom ~20%, right ~13%). Centered text centers inside this box.
+const S = portrait ? { x0: W * 0.06, x1: W * 0.86, y0: H * 0.12, y1: H * 0.78 } : { x0: padX, x1: W - padX, y0: H * 0.07, y1: H * 0.93 };
+const SW = S.x1 - S.x0;
+/** Let a text element wrap inside the safe width and shrink to fit (call in build). */
+function fit(el, { height = H * 0.3, center = false } = {}) {
+  css(el, { left: S.x0, width: SW, whiteSpace: 'normal', textWrap: 'balance', textAlign: center ? 'center' : 'left' });
+  fitText(el, { max: parseFloat(getComputedStyle(el).fontSize), min: px(0.03), width: SW, height });
+  return el;
+}
 const IN = 0.45;  // scenes fade in over their first ~0.4 s: start the action after that
 
 // ── chalk helpers ─────────────────────────────────────────────────────────
@@ -91,14 +101,13 @@ const SCENES = [
     canvas: true,
     build(el, s) {
       chalky(el);
-      el.append(
-        h('div', { class: 't say center', style: { left: 0, width: W, top: H * 0.31 } }, 'This video was never filmed.'),
-        h('div', { class: 't big center', style: { left: 0, width: W, top: H * 0.47, color: YELLOW } }, 'It was written.'),
-      );
-      const range = document.createRange();
-      range.selectNodeContents(el.querySelector('.big'));
-      const w = range.getBoundingClientRect().width / (el.getBoundingClientRect().width / W || 1);
-      s.line = { x: (W - w) / 2, y: H * 0.47 + px(0.17), w };
+      const say = h('div', { class: 't say center', style: { top: H * 0.31 } }, 'This video was never filmed.');
+      const big = h('div', { class: 't big center', style: { top: H * 0.47, color: YELLOW } }, 'It was written.');
+      el.append(say, big);
+      fit(say, { center: true, height: H * 0.14 });
+      fit(big, { center: true, height: H * 0.24 });
+      const last = textLines(big).pop();
+      s.line = { x: last.x, y: last.y + last.h + u * 0.01, w: last.w };
     },
     render(t, s) {
       writeOn(s, s.$('.say'), 0.15, 1.2);
@@ -112,15 +121,19 @@ const SCENES = [
     canvas: true,
     build(el, s) {
       chalky(el);
-      const f = h('div', { class: 't formula center', style: { left: 0, width: W, top: H * 0.05 } });
+      const f = h('div', { class: 't formula center', style: { left: S.x0, width: SW, top: portrait ? S.y0 : H * 0.05 } });
       katex.render(String.raw`\text{frame} = f(t)`, f, { throwOnError: false });
       el.append(f);
-      s.main = portrait ? { w: W * 0.8, cx: W / 2, cy: H * 0.34 } : { w: W * 0.4, cx: W * 0.38, cy: H * 0.45 };
-      s.snap = portrait ? { w: W * 0.46, cx: W / 2, cy: H * 0.6 } : { w: W * 0.22, cx: W * 0.79, cy: H * 0.45 };
+      const cx = (S.x0 + S.x1) / 2;
+      s.main = portrait ? { w: SW, cx, cy: H * 0.34 } : { w: W * 0.4, cx: W * 0.38, cy: H * 0.45 };
+      s.snap = portrait ? { w: SW * 0.55, cx, cy: H * 0.56 } : { w: W * 0.22, cx: W * 0.79, cy: H * 0.45 };
       s.main.h = s.main.w * 9 / 16;
       s.snap.h = s.snap.w * 9 / 16;
-      s.line = { x0: portrait ? W * 0.1 : W * 0.15, x1: portrait ? W * 0.9 : W * 0.85, y: portrait ? H * 0.84 : H * 0.85, max: 8 };
-      el.append(h('div', { class: 't note center', style: { color: PINK, left: s.snap.cx - W * 0.2, width: W * 0.4, top: s.snap.cy + s.snap.h / 2 + u * 0.03 } }, 'same t, same picture'));
+      s.line = { x0: portrait ? S.x0 + u * 0.03 : W * 0.15, x1: portrait ? S.x1 - u * 0.03 : W * 0.85, y: portrait ? H * 0.73 : H * 0.85, max: 8 };
+      const note = h('div', { class: 't note center', style: { color: PINK, top: s.snap.cy + s.snap.h / 2 + u * 0.03 } }, 'same t, same picture');
+      el.append(note);
+      if (portrait) fit(note, { center: true, height: H * 0.06 });
+      else css(note, { left: s.snap.cx - W * 0.2, width: W * 0.4 });
     },
     render(t, s) {
       const ctx = s.ctx;
@@ -168,10 +181,11 @@ const SCENES = [
     canvas: true,
     build(el, s) {
       chalky(el);
-      el.append(
-        h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'Thirty pictures every second'),
-        h('div', { class: 't note', style: { left: padX, top: H * 0.77, color: YELLOW } }, `${FPS} fps × ${s.total.toFixed(0)} s = ${s.frames} frames`),
-      );
+      const say = h('div', { class: 't say', style: { top: portrait ? S.y0 : H * 0.09 } }, 'Thirty pictures every second');
+      const note = h('div', { class: 't note', style: { top: portrait ? H * 0.66 : H * 0.77, color: YELLOW } }, `${FPS} fps × ${s.total.toFixed(0)} s = ${s.frames} frames`);
+      el.append(say, note);
+      fit(say, { height: H * 0.16 });
+      fit(note, { height: H * 0.1 });
     },
     render(t, s) {
       const ctx = s.ctx;
@@ -197,7 +211,7 @@ const SCENES = [
         orbit(ctx, x + fw / 2, cy, fh * 0.36, -Math.PI / 2 + k * 0.44, { seed: 60 + k, weight: 0.85 });
         text(ctx, `t = ${(k * 0.4).toFixed(1)}`, x + fw / 2, bot + fw * 0.12, { size: px(0.04) });
       }
-      text(ctx, '(every 12th frame shown)', W - padX, H * 0.8, { size: px(0.036), color: P.muted, align: 'right', alpha: fade(s, IN + 2.6, IN + 3.0) });
+      text(ctx, '(every 12th frame shown)', S.x1, portrait ? H * 0.74 : H * 0.8, { size: px(0.036), color: P.muted, align: 'right', alpha: fade(s, IN + 2.6, IN + 3.0) });
     },
   },
   {
@@ -208,10 +222,12 @@ const SCENES = [
       const names = ['your code', 'browser', 'ffmpeg', 'video file'];
       const caps = ['f(t)', 'draws each frame', 'stitches frames', 'MP4'];
       const colors = [BLUE, GREEN, ORANGE, YELLOW];
-      el.append(h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'How it renders'));
+      const say = h('div', { class: 't say', style: { top: portrait ? S.y0 : H * 0.09 } }, 'How it renders');
+      el.append(say);
+      fit(say, { height: H * 0.12 });
       s.boxes = names.map((name, i) => {
-        const bw = portrait ? W * 0.6 : W * 0.155, bh = portrait ? H * 0.11 : H * 0.24;
-        const cx = portrait ? W / 2 : W * (0.155 + i * 0.23), cy = portrait ? H * (0.28 + i * 0.165) : H * 0.5;
+        const bw = portrait ? SW * 0.7 : W * 0.155, bh = portrait ? H * 0.1 : H * 0.24;
+        const cx = portrait ? (S.x0 + S.x1) / 2 : W * (0.155 + i * 0.23), cy = portrait ? H * (0.26 + i * 0.145) : H * 0.5;
         const label = h('div', { class: 't label', style: { left: cx - bw / 2, width: bw, top: cy - bh * (portrait ? 0.3 : 0.36), color: colors[i] } }, name);
         const cap = h('div', { class: 't cap', style: { left: cx - bw * 0.75, width: bw * 1.5, top: cy + bh / 2 + u * 0.025 } }, caps[i]);
         el.append(label, cap);
@@ -268,15 +284,17 @@ const SCENES = [
     canvas: true,
     build(el) {
       chalky(el);
-      el.append(
-        h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'The sound is code too'),
-        h('div', { class: 't code', style: { left: padX, top: portrait ? H * 0.66 : H * 0.64 } }),
-      );
+      const say = h('div', { class: 't say', style: { top: portrait ? S.y0 : H * 0.09 } }, 'The sound is code too');
+      const code = h('div', { class: 't code', style: { left: S.x0, top: portrait ? H * 0.58 : H * 0.64 } }, "audio(a) {\n  a.pad({ chords: ['Am9', 'Fmaj7'] });\n  a.whoosh(2.4);\n}");
+      el.append(say, code);
+      fit(say, { height: H * 0.16 });
+      fitText(code, { max: parseFloat(getComputedStyle(code).fontSize), min: px(0.025), width: SW });
+      code.textContent = '';
     },
     render(t, s) {
       const ctx = s.ctx;
       writeOn(s, s.$('.say'), IN, IN + 0.8);
-      const x0 = padX, x1 = W - padX, y = portrait ? H * 0.45 : H * 0.43, amp = H * 0.1;
+      const x0 = S.x0, x1 = S.x1, y = portrait ? H * 0.42 : H * 0.43, amp = portrait ? H * 0.07 : H * 0.1;
       const n = 260;
       const wave = (k, phase) => Array.from({ length: n }, (_, i) => {
         const x = i / (n - 1);
@@ -293,17 +311,19 @@ const SCENES = [
     canvas: true,
     build(el, s) {
       chalky(el);
-      el.append(h('div', { class: 't say', style: { left: padX, top: H * 0.09 } }, 'Then it checks its own work'));
+      const say = h('div', { class: 't say', style: { top: portrait ? S.y0 : H * 0.09 } }, 'Then it checks its own work');
+      el.append(say);
+      fit(say, { height: H * 0.16 });
       const cols = portrait ? 3 : 4, rows = portrait ? 4 : 3;
-      const gridW = portrait ? W * 0.84 : W * 0.5;
+      const gridW = portrait ? SW : W * 0.5;
       const gap = u * 0.022;
       const cw = (gridW - gap * (cols - 1)) / cols, ch = cw * 9 / 16;
-      const x0 = padX, y0 = portrait ? H * 0.22 : H * 0.3;
+      const x0 = S.x0, y0 = portrait ? H * 0.25 : H * 0.3;
       s.cells = Array.from({ length: cols * rows }, (_, i) => ({ x: x0 + (i % cols) * (cw + gap), y: y0 + Math.floor(i / cols) * (ch + gap), w: cw, h: ch }));
       s.bad = portrait ? 4 : 6;
       const bad = s.cells[s.bad];
-      const nx = portrait ? padX : x0 + gridW + u * 0.07;
-      const ny = (k) => (portrait ? y0 + rows * (ch + gap) + u * 0.03 + k * u * 0.085 : bad.y + bad.h / 2 - u * 0.04 + (k - 1) * u * 0.1);
+      const nx = portrait ? S.x0 : x0 + gridW + u * 0.07;
+      const ny = (k) => (portrait ? y0 + rows * (ch + gap) + u * 0.02 + k * u * 0.08 : bad.y + bad.h / 2 - u * 0.04 + (k - 1) * u * 0.1);
       s.notes = [
         h('div', { class: 't note', style: { left: nx, top: ny(0), color: PINK } }, 'frame 0:12: text cut off'),
         h('div', { class: 't note', style: { left: nx, top: ny(1), color: YELLOW } }, 'fix it, render again'),
@@ -341,13 +361,14 @@ const SCENES = [
     canvas: true,
     build(el) {
       chalky(el);
-      el.append(
-        h('div', { class: 't big center', style: { left: 0, width: W, top: H * 0.46 } }, '/make-video'),
-        h('div', { class: 't say center', style: { left: 0, width: W, top: H * 0.65, color: YELLOW, fontSize: `${px(0.075)}px` } }, 'every frame is f(t)'),
-      );
+      const big = h('div', { class: 't big center', style: { top: H * 0.46 } }, '/make-video');
+      const sub = h('div', { class: 't say center', style: { top: H * 0.65, color: YELLOW, fontSize: `${px(0.075)}px` } }, 'every frame is f(t)');
+      el.append(big, sub);
+      fit(big, { center: true, height: H * 0.16 });
+      fit(sub, { center: true, height: H * 0.1 });
     },
     render(t, s) {
-      orbit(s.ctx, W / 2, H * 0.29, u * 0.13, -Math.PI / 2 + s.T * 1.1, { seed: 160, weight: 1.4, p: s.at(IN, IN + 0.7) });
+      orbit(s.ctx, (S.x0 + S.x1) / 2, H * 0.29, u * 0.13, -Math.PI / 2 + s.T * 1.1, { seed: 160, weight: 1.4, p: s.at(IN, IN + 0.7) });
       writeOn(s, s.$('.big'), IN, IN + 0.9);
       css(s.$('.say'), { opacity: fade(s, IN + 1.0, IN + 1.5) });
     },

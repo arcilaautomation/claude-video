@@ -522,7 +522,10 @@ export function css(el, props) {
   }
   if (tf) {
     let out = '';
-    if (tf.x != null || tf.y != null || tf.z != null) out += `translate3d(${px(tf.x ?? 0)}, ${px(tf.y ?? 0)}, ${px(tf.z ?? 0)}) `;
+    // 2D unless z is used: 3D transforms promote the element to a compositor layer whose
+    // raster scale Chrome reuses between frames, which makes pixels depend on render history.
+    if (tf.z != null) out += `translate3d(${px(tf.x ?? 0)}, ${px(tf.y ?? 0)}, ${px(tf.z)}) `;
+    else if (tf.x != null || tf.y != null) out += `translate(${px(tf.x ?? 0)}, ${px(tf.y ?? 0)}) `;
     if (tf.rotate != null) out += `rotate(${tf.rotate}deg) `;
     if (tf.rotateX != null) out += `rotateX(${tf.rotateX}deg) `;
     if (tf.rotateY != null) out += `rotateY(${tf.rotateY}deg) `;
@@ -1038,13 +1041,13 @@ html, body { margin: 0; padding: 0; overflow: hidden; background: ${isRender ? '
       const [dx, dy] = { left: [-W, 0], right: [W, 0], up: [0, -H], down: [0, H] }[dir] || [-W, 0];
       // Content moves in direction `dir`; the entering scene arrives from the opposite side.
       const k = entering ? e - 1 : e;
-      el.style.transform = `translate3d(${dx * k}px, ${dy * k}px, 0)`;
+      el.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
     } else if (type.startsWith('cover-')) {
       const dir = type.split('-')[1];
       const [dx, dy] = { left: [-W, 0], right: [W, 0], up: [0, -H], down: [0, H] }[dir] || [-W, 0];
-      if (entering) el.style.transform = `translate3d(${dx * (e - 1)}px, ${dy * (e - 1)}px, 0)`;
+      if (entering) el.style.transform = `translate(${dx * (e - 1)}px, ${dy * (e - 1)}px)`;
       else {
-        el.style.transform = `translate3d(${dx * e * 0.25}px, ${dy * e * 0.25}px, 0)`;
+        el.style.transform = `translate(${dx * e * 0.25}px, ${dy * e * 0.25}px)`;
         el.style.opacity = 1 - outGoing;
       }
     } else if (type.startsWith('wipe-')) {

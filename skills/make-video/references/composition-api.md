@@ -37,6 +37,7 @@ defineVideo({
 4. **Build once, render often.** Create DOM, measure, precompute paths/layouts in `build()`; `render()` only updates.
 5. **Async is allowed** but must settle: `render` may return a promise (e.g. `clip.seek(t)`); the frame waits for it.
 6. **CSS transitions are disabled; CSS animations are scrubbed** — `@keyframes` animations are paused and seeked to the clip's local time, so they work (relative to the scene start), but prefer `render(t)` for anything important.
+7. **Avoid forcing GPU layers**: `will-change`, `translate3d`/`translateZ`, `rotateX/Y` and `perspective` promote elements to compositor layers whose raster scale Chrome reuses between frames, so pixels can depend on render history (the audit's determinism check catches it). `css()` emits 2D transforms unless you pass `z`/`rotateX`/`rotateY`.
 
 ## `defineVideo(config | () => config | async () => config)`
 

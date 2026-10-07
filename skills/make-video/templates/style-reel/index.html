@@ -7,7 +7,9 @@
 <style>
   .mv-clip { position: absolute; }
   .name { position: absolute; left: 7%; bottom: 11%; white-space: nowrap; }
-  .tag { position: absolute; left: 7%; bottom: 7%; white-space: nowrap; }
+  .tag { position: absolute; left: 7%; bottom: 7%; max-width: 80%; text-wrap: balance; }
+  .portrait .name { bottom: 27%; }
+  .portrait .tag { bottom: 22.5%; max-width: 76%; }
   .card-title { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; white-space: nowrap; }
 </style>
 </head>
@@ -24,6 +26,7 @@ import {
 
 const W = {{WIDTH}}, H = {{HEIGHT}}, FPS = {{FPS}};
 const u = Math.min(W, H);
+if (H > W) document.documentElement.classList.add('portrait');
 const SEG = 3.6;
 const fsz = (k) => `${Math.round(u * k)}px`;
 
