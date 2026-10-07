@@ -519,15 +519,16 @@ async function mixAudio({ info, projectDir, procWav, from, to, outWav }) {
     buses[role].push(`[t${idx}]`);
   }
   if (!inputs.length) return null;
+  // Every bus is mixed onto a silent base of exactly the timeline's length, so no
+  // filter (sidechaincompress, amix, a track that ends early) can shorten the mix.
+  const total = info.duration;
+  const used = Object.entries(buses).filter(([, list]) => list.length);
+  chains.push(`anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=${total.toFixed(4)},asplit=${used.length + 1}${used.map((_, i) => `[base${i}]`).join('')}[basem]`);
   const busOut = {};
-  for (const [name, list] of Object.entries(buses)) {
-    if (!list.length) continue;
-    if (list.length === 1) busOut[name] = list[0];
-    else {
-      chains.push(`${list.join('')}amix=inputs=${list.length}:normalize=0:duration=longest[${name}mix]`);
-      busOut[name] = `[${name}mix]`;
-    }
-  }
+  used.forEach(([name, list], i) => {
+    chains.push(`[base${i}]${list.join('')}amix=inputs=${list.length + 1}:normalize=0:duration=first[${name}bus]`);
+    busOut[name] = `[${name}bus]`;
+  });
   if (busOut.voice && busOut.music) {
     chains.push(`${busOut.voice}asplit=2[vmain][vkey]`);
     chains.push(`${busOut.music}[vkey]sidechaincompress=threshold=0.04:ratio=6:attack=20:release=400:makeup=1[mducked]`);
@@ -535,12 +536,9 @@ async function mixAudio({ info, projectDir, procWav, from, to, outWav }) {
     busOut.music = '[mducked]';
   }
   const finals = Object.values(busOut);
-  const total = info.duration;
   const start = from ?? 0;
   const end = to ?? total;
-  const tail = `apad=whole_dur=${total.toFixed(4)},atrim=start=${start.toFixed(4)}:end=${end.toFixed(4)},asetpts=PTS-STARTPTS`;
-  if (finals.length === 1) chains.push(`${finals[0]}${tail}[mix]`);
-  else chains.push(`${finals.join('')}amix=inputs=${finals.length}:normalize=0:duration=longest,${tail}[mix]`);
+  chains.push(`[basem]${finals.join('')}amix=inputs=${finals.length + 1}:normalize=0:duration=first,atrim=start=${start.toFixed(4)}:end=${end.toFixed(4)},asetpts=PTS-STARTPTS[mix]`);
   const args = ['-loglevel', 'error', '-y'];
   for (const i of inputs) args.push('-i', i);
   args.push('-filter_complex', chains.join(';'), '-map', '[mix]', '-ar', '48000', '-ac', '2', '-c:a', 'pcm_f32le', outWav);

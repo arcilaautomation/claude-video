@@ -155,3 +155,26 @@ defineVideo({ width: 200, height: 1200, fps: 10, background: '#000',
                          capture_output=True).stdout
     reds = raw[0::3]
     assert sum(reds) / len(reds) > 200, "bottom of a tall frame came out dark — viewport clipped the capture"
+
+
+def test_mix_keeps_full_length_when_voice_ends_early(tmp_path):
+    """Ducking used to stop the music when the (shorter) voice track ended."""
+    d = project(tmp_path, """
+import { defineVideo } from './lib/mv.js';
+defineVideo({ width: 160, height: 90, fps: 10, background: '#222', scenes: [{ name: 's', duration: 6 }],
+  tracks: [
+    { src: 'assets/music.wav', role: 'music', loop: true, gain: 0.8, fadeIn: 0.5 },
+    { src: 'assets/voice.wav', role: 'voice', at: 1, trim: 0.5, duration: 2.0 },
+  ] });
+""")
+    synth_audio(d / "assets" / "music.wav", [("tone", 1.5)])
+    synth_audio(d / "assets" / "voice.wav", [("tone", 2.0), ("gap", 1.0)])
+    proc = render("audio", str(d))
+    assert proc.returncode == 0, proc.stderr
+    wav = d / "out" / "audio.wav"
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(wav), "-ac", "1", "-ar", "1000", "-f", "s16le", "-"], capture_output=True).stdout
+    samples = [int.from_bytes(raw[i:i + 2], "little", signed=True) for i in range(0, len(raw) - 1, 2)]
+    assert len(samples) / 1000 == pytest.approx(6.0, abs=0.05)
+    tail = samples[4000:5900]  # well after the voice ended at 3 s
+    rms = (sum(v * v for v in tail) / len(tail)) ** 0.5 / 32768
+    assert rms > 0.01, "music must keep playing after the voice ends"

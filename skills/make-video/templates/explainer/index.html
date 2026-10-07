@@ -55,6 +55,8 @@ const rectPts = (x, y, w, hh) => [[x, y], [x + w, y], [x + w, y + hh], [x, y + h
 const chalkRect = (ctx, x, y, w, hh, o) => chalk(ctx, rectPts(x, y, w, hh), o);
 /** Chalk-scribbled fill (hatching in chalk color) instead of a flat vector fill. */
 const chalkFill = (ctx, pts, color, seed = 1, gap = 3) => hatch(ctx, pts, { gap, angle: -30, width: 2.6, color, seed, rough: 0.4 });
+/** Orbit radius that fills a 16:9 box (the orbit is a 2:1 ellipse). */
+const orbitR = (w, hh) => Math.min(w * 0.42, hh * 0.8);
 /** A tiny scene — a planet orbiting a sun — that is literally a function of time. */
 function orbit(ctx, cx, cy, r, angle, { p = 1, seed = 1, weight = 1 } = {}) {
   chalk(ctx, circlePoints(cx, cy, r, 80, r * 0.5), { color: alpha(P.ink, 0.6), width: 2.4 * weight, seed: seed + 1, density: 0.55, progress: p });
@@ -117,7 +119,7 @@ const SCENES = [
     },
   },
   {
-    name: 'function', duration: 7.2, cue: 'every frame is', label: 'frame = f(t)', note: 't scrubs forward and back; at the same t the frame matches the earlier snapshot exactly.',
+    name: 'function', duration: 7.6, cue: 'every frame is', label: 'frame = f(t)', note: 't scrubs forward and back; at the same t the frame matches the earlier snapshot exactly.',
     canvas: true,
     build(el, s) {
       chalky(el);
@@ -129,7 +131,9 @@ const SCENES = [
       s.snap = portrait ? { w: SW * 0.55, cx, cy: H * 0.56 } : { w: W * 0.22, cx: W * 0.79, cy: H * 0.45 };
       s.main.h = s.main.w * 9 / 16;
       s.snap.h = s.snap.w * 9 / 16;
-      s.line = { x0: portrait ? S.x0 + u * 0.03 : W * 0.15, x1: portrait ? S.x1 - u * 0.03 : W * 0.85, y: portrait ? H * 0.73 : H * 0.85, max: 8 };
+      s.line = portrait
+        ? { x0: S.x0 + u * 0.03, x1: S.x1 - u * 0.03, y: H * 0.73, max: 8 }
+        : { x0: s.main.cx - s.main.w / 2, x1: s.snap.cx + s.snap.w / 2, y: H * 0.85, max: 8 };
       const note = h('div', { class: 't note center', style: { color: PINK, top: s.snap.cy + s.snap.h / 2 + u * 0.03 } }, 'same t, same picture');
       el.append(note);
       if (portrait) fit(note, { center: true, height: H * 0.06 });
@@ -149,8 +153,8 @@ const SCENES = [
         chalk(ctx, [[x, L.y - u * 0.014], [x, L.y + u * 0.014]], { color: P.ink, width: 3, seed: 20 + i });
         text(ctx, String(i), x, L.y + u * 0.05, { size: px(0.042) });
       }
-      // t scrubs 0 → 6, then back to 2.5.
-      const tm = keys(t, [[IN + 1.5, 0, ease.inOutSine], [IN + 3.6, 6, ease.inOutCubic], [IN + 4.6, 2.5]]);
+      // t scrubs to 2.5 and pauses (snapshot!), runs on to 6, then comes back to 2.5.
+      const tm = keys(t, [[IN + 1.5, 0, ease.inOutSine], [IN + 2.5, 2.5], [IN + 3.0, 2.5, ease.inOutSine], [IN + 4.2, 6, ease.inOutCubic], [IN + 5.2, 2.5]]);
       const mx = lerp(L.x0, L.x1, tm / L.max);
       const show = s.at(IN + 1.3, IN + 1.6);
       if (show > 0) {
@@ -161,17 +165,20 @@ const SCENES = [
         ctx.restore();
         text(ctx, `t = ${tm.toFixed(2)}`, mx, L.y - u * 0.105, { size: px(0.055), color: YELLOW, alpha: show });
       }
-      orbit(ctx, main.cx, main.cy, main.h * 0.4, -Math.PI / 2 + tm * 1.1, { p: s.at(IN + 0.8, IN + 1.5), seed: 9, weight: 1.4 });
-      // Snapshot taken when t first passes 2.5 — then the frame returns to the very same picture.
-      const snapP = s.at(IN + 2.5, IN + 3.0);
+      orbit(ctx, main.cx, main.cy, orbitR(main.w, main.h), -Math.PI / 2 + tm * 1.1, { p: s.at(IN + 0.8, IN + 1.5), seed: 9, weight: 1.4 });
+      // While t pauses at 2.50 a snapshot is taken (flash on the main frame) — later the
+      // frame comes back to t = 2.50 and matches it exactly.
+      const flash = s.at(IN + 2.55, IN + 2.6) * (1 - s.at(IN + 2.65, IN + 2.95));
+      if (flash > 0) chalkRect(ctx, main.cx - main.w / 2 - 6, main.cy - main.h / 2 - 6, main.w + 12, main.h + 12, { color: alpha('#ffffff', flash), width: 7, seed: 3 });
+      const snapP = s.at(IN + 2.6, IN + 2.9);
       if (snapP > 0) {
         chalkRect(ctx, snap.cx - snap.w / 2, snap.cy - snap.h / 2, snap.w, snap.h, { color: alpha(P.ink, 0.85), width: 3, seed: 41, progress: snapP });
         if (snapP >= 1) {
-          orbit(ctx, snap.cx, snap.cy, snap.h * 0.4, -Math.PI / 2 + 2.5 * 1.1, { seed: 9, weight: 0.9 });
-          text(ctx, 't = 2.50', snap.cx, snap.cy - snap.h / 2 - u * 0.04, { size: px(0.042), color: YELLOW });
+          orbit(ctx, snap.cx, snap.cy, orbitR(snap.w, snap.h), -Math.PI / 2 + 2.5 * 1.1, { seed: 9, weight: 0.9 });
+          text(ctx, 'snapshot  t = 2.50', snap.cx, snap.cy - snap.h / 2 - u * 0.04, { size: px(0.042), color: YELLOW });
         }
       }
-      const same = s.at(IN + 4.7, IN + 5.1);
+      const same = s.at(IN + 5.3, IN + 5.7);
       if (same > 0 && !portrait) text(ctx, '=', (main.cx + main.w / 2 + snap.cx - snap.w / 2) / 2, main.cy, { size: px(0.11), color: PINK, alpha: same });
       css(s.$('.note'), { opacity: same });
     },
@@ -182,7 +189,7 @@ const SCENES = [
     build(el, s) {
       chalky(el);
       const say = h('div', { class: 't say', style: { top: portrait ? S.y0 : H * 0.09 } }, 'Thirty pictures every second');
-      const note = h('div', { class: 't note', style: { top: portrait ? H * 0.66 : H * 0.77, color: YELLOW } }, `${FPS} fps × ${s.total.toFixed(0)} s = ${s.frames} frames`);
+      const note = h('div', { class: 't note', style: { top: portrait ? H * 0.66 : H * 0.77, color: YELLOW } }, `${FPS} fps × ${s.total.toFixed(1)} s = ${s.frames} frames`);
       el.append(say, note);
       fit(say, { height: H * 0.16 });
       fit(note, { height: H * 0.1 });
@@ -211,7 +218,7 @@ const SCENES = [
         orbit(ctx, x + fw / 2, cy, fh * 0.36, -Math.PI / 2 + k * 0.44, { seed: 60 + k, weight: 0.85 });
         text(ctx, `t = ${(k * 0.4).toFixed(1)}`, x + fw / 2, bot + fw * 0.12, { size: px(0.04) });
       }
-      text(ctx, '(every 12th frame shown)', S.x1, portrait ? H * 0.74 : H * 0.8, { size: px(0.036), color: P.muted, align: 'right', alpha: fade(s, IN + 2.6, IN + 3.0) });
+      text(ctx, '(every 12th frame shown)', S.x1, portrait ? H * 0.74 : H * 0.8, { size: px(0.04), color: P.ink, align: 'right', alpha: fade(s, IN + 2.6, IN + 3.0) });
     },
   },
   {
@@ -255,21 +262,25 @@ const SCENES = [
       const flow = IN + 2.6;
       if (t > flow) {
         const [b1, b2, b3] = [B[1], B[2], B[3]];
-        const fw = u * 0.055, fh = fw * 0.56;
-        for (let k = 0; k < 4; k++) {
-          const q = ((t - flow) / 1.2 + k / 4) % 1;
+        const fw = u * 0.08, fh = fw * 0.56;
+        for (let k = 0; k < 3; k++) {
+          const q = ((t - flow) / 1.4 + k / 3) % 1;
           const x = portrait ? b1.cx : lerp(b1.cx, b2.cx, q);
           const y = portrait ? lerp(b1.cy, b2.cy, q) : b1.cy + b1.bh * 0.24;
           ctx.save();
           ctx.globalAlpha = Math.min(1, (t - flow) * 3) * Math.sin(Math.PI * q);
-          chalkRect(ctx, x - fw / 2, y - fh / 2, fw, fh, { color: YELLOW, width: 2.5, seed: 200 + k });
+          chalkRect(ctx, x - fw / 2, y - fh / 2, fw, fh, { color: YELLOW, width: 3.5, seed: 200 + k });
+          ctx.fillStyle = alpha(BLUE, 0.9);
+          ctx.beginPath();
+          ctx.arc(x + fw * 0.18, y, fh * 0.16, 0, TAU);
+          ctx.fill();
           ctx.restore();
         }
         // ffmpeg's growing stack of frames.
-        const stack = Math.min(5, Math.floor((t - flow) / 0.5) + 1);
+        const stack = Math.min(4, Math.floor((t - flow) / 0.6) + 1);
         for (let k = 0; k < stack; k++) {
-          const x = b2.cx - fw / 2 + k * u * 0.006, y = b2.cy + b2.bh * 0.24 - k * u * 0.006;
-          chalkRect(ctx, x - fw * 0.2, y - fh / 2, fw * 1.4, fh, { color: alpha(ORANGE, 0.9), width: 2.5, seed: 220 + k });
+          const x = b2.cx - fw / 2 + k * u * 0.01, y = b2.cy + b2.bh * 0.22 - k * u * 0.01;
+          chalkRect(ctx, x, y - fh / 2, fw, fh, { color: alpha(ORANGE, 0.95), width: 3, seed: 220 + k });
         }
         // The MP4 fills.
         const fill = s.at(flow + 0.3, s.d - 0.6, ease.linear);
@@ -344,7 +355,8 @@ const SCENES = [
       const fixedAt = IN + 3.6;
       // The faulty frame: a caption poking past its right edge — until the fix.
       if (t > IN + 1.0 && t < fixedAt) {
-        const bar = [[bad.x + bad.w * 0.5, bad.y + bad.h * 0.72], [bad.x + bad.w + u * 0.012, bad.y + bad.h * 0.72], [bad.x + bad.w + u * 0.012, bad.y + bad.h * 0.84], [bad.x + bad.w * 0.5, bad.y + bad.h * 0.84]];
+        const over = bad.x + bad.w + u * 0.065;   // well past the cell and its highlight
+        const bar = [[bad.x + bad.w * 0.45, bad.y + bad.h * 0.7], [over, bad.y + bad.h * 0.7], [over, bad.y + bad.h * 0.86], [bad.x + bad.w * 0.45, bad.y + bad.h * 0.86]];
         chalkFill(ctx, bar, PINK, 130, 3);
       }
       const ring = s.at(IN + 1.5, IN + 2.0) * (1 - s.at(fixedAt, fixedAt + 0.2));
@@ -403,7 +415,8 @@ defineVideo(async () => {
       for (const sc of a.scenes.slice(1)) a.whoosh(sc.start - 0.1, { gain: 0.2, dur: 0.8 });
       const f = a.scene('function').start;
       a.chime(f + IN + 0.4, { note: 'A5', gain: 0.12 });
-      a.chime(f + IN + 4.75, { note: 'E6', gain: 0.12 });
+      a.click(f + IN + 2.55, { gain: 0.3, tone: 3200 });
+      a.chime(f + IN + 5.35, { note: 'E6', gain: 0.12 });
       const pipe = a.scene('pipeline').start;
       ['C6', 'E6', 'G6', 'C7'].forEach((note, i) => a.blip(pipe + IN + 0.35 + i * 0.5, { note, gain: 0.13 }));
       const snd = a.scene('sound').start;
