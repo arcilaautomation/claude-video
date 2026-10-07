@@ -157,7 +157,7 @@ node "$R" storyboard <dir>                 # beats → numbered storyboard sheet
 node "$R" sheet <dir> [--count 24]         # quick timeline contact sheet (no encode)
 node "$R" stills <dir> --at 1.5,4 [--debug] # full-res PNGs (debug = safe-area guides + timecode)
 node "$R" audit <dir> [--every 0.25]       # layout + determinism audit → out/audit.json
-node "$R" video <dir> [--draft] [--from 10 --to 18] [--scale 2] [--fps 60] [--format gif|mov] [--alpha]
+node "$R" video <dir> [--draft] [--from 10 --to 18] [--scale 2] [--fps 60] [--format gif|mov] [--alpha] [--frames png]
 node "$R" audio <dir>                      # just the mixed soundtrack (WAV)
 node "$R" info <dir>                       # timeline JSON (scenes, beats, tracks)
 node "$R" serve <dir> [--open]             # live preview with scrubber (local browser)

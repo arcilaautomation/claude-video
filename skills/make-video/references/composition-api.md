@@ -79,7 +79,7 @@ defineVideo(async () => {
   label, note, beat }               // storyboard metadata
 ```
 
-Transitions: `cut`, `fade` (crossfade both), `fade-over` (new over old), `dip` (through the background), `slide-left|right|up|down` (push), `cover-left|…` (slides over), `wipe-left|right|up|down`, `iris` (`{ type: 'iris', x, y }`), `zoom`, `blur`. Write `'type:seconds'` or `{ type, duration, ease }`. The runtime animates the clip container — animate children, not the container.
+Transitions: `cut`, `fade` (old out, then new in — no text-on-text), `crossfade` (both at once), `fade-over` (new over an opaque old scene), `dip` (through the background), `slide-left|right|up|down` (push), `cover-left|…` (slides over), `wipe-left|right|up|down` (clips both scenes; add `edge: '#ff4d1f', edgeWidth` for a colored bar on the wipe front), `iris` (`{ type: 'iris', x, y }`), `zoom`, `blur`. Write `'type:seconds'` or `{ type, duration, ease, … }`. The runtime animates the clip container — animate children, not the container. A scene's first ~45% of a `fade` is invisible, so start its entrances after that.
 
 The clip info object `s` (second argument to `render`, also passed to `build`):
 
@@ -92,19 +92,20 @@ The clip info object `s` (second argument to `render`, also passed to `build`):
 | `s.el`, `s.$(sel)`, `s.$$(sel)` | the clip's element and queries inside it |
 | `s.ctx`, `s.canvas` | 2D context / canvas when `canvas` is set (pre-cleared every frame) |
 | `s.width`, `s.height` | frame size |
+| `s.total`, `s.frames` | the whole video's duration and frame count |
 
 ## Motion helpers (`mv.js`)
 
 - **Math**: `clamp(x, lo=0, hi=1)`, `lerp(a, b, p)`, `invLerp`, `remap(x, a, b, c, d, easing?)`, `progress(t, start, end, easing?)`, `smoothstep`, `fract`, `mod`, `pingpong`, `rad`, `deg`, `dist`, `stepTime(t, 12)` (stop-motion), `stagger(i, each, start)`.
 - **Easing** `ease.*`: `linear`, `in/out/inOut` × `Sine Quad Cubic Quart Quint Expo Circ Back Elastic Bounce`; curated `smooth`, `snappy`, `standard`, `anticipate`; factories `bezier(x1,y1,x2,y2)`, `spring({ bounce })`, `back(overshoot)`, `steps(n)`, `reverse(fn)`, `inOut(fn)`. Physical `spring(seconds, { stiffness, damping, mass })`.
 - **Interpolation**: `mix(a, b, p)` (numbers, CSS colors via OKLab, arrays, flat objects), `tween(t, t0, t1, from, to, easing)`, `keys(t, [[0, 0], [1, 100, ease.outBack], [2.5, 40]])` (each key's easing shapes the segment that leaves it).
-- **Color**: `mixColor(a, b, p)`, `alpha(c, a)`, `shade(c, ±amount)`, `contrast(a, b)` (WCAG ratio), `parseColor`.
+- **Color**: `mixColor(a, b, p)`, `alpha(c, a)`, `shade(c, ±amount)`, `contrast(a, b)` (WCAG ratio), `readable(fg, bg, min = 4.5)` (same hue, lightness nudged until it passes), `parseColor`.
 - **Randomness**: `rng(seed)` → `.next() .range(a,b) .int(a,b) .pick(arr) .chance(p) .gauss() .shuffle(arr)`; `hash(...numbers)` → [0,1); `noise(x, y, z)` Perlin; `fbm(x, y, z, octaves)`; `wiggle(t, freq, amp, seed)` (AE-style wiggle); `noiseSeed(n)`.
 - **DOM**: `h(tag, attrs, ...kids)`, `svg(tag, attrs, ...kids)`, `$`, `$$`, `css(el, { x, y, z, scale, scaleX, scaleY, rotate, rotateX, rotateY, skewX, skewY, opacity, blur, origin, …any CSS or --var })` — transform keys rebuild the whole transform, so pass them together.
-- **Text**: `splitText(el)` → `{ words, chars }` inline-block spans (call in `build`, call again in `render` to get the cached spans); `fitText(el, { max, min, width, height })` shrink-to-fit (in `build`, after fonts load); `typeOn(el, text, p, { caret: '▍', t })`; `countUp(p, from, to, { decimals, prefix, suffix })`.
+- **Text**: `splitText(el)` → `{ words, chars }` inline-block spans (call in `build`, call again in `render` to get the cached spans); `fitText(el, { max, min, width, height })` shrink-to-fit (in `build`, after fonts load); `textLines(el)` → line boxes `[{ x, y, w, h }]` in frame pixels (size an underline to the last line, place highlights); `typeOn(el, text, p, { caret: '|', t })`; `countUp(p, from, to, { decimals, prefix, suffix })`. Faux bold/italic is disabled (`font-synthesis: none`): use weights the font has — `--weight-display`/`--weight-body` from the theme. Characters a font lacks fall back to another font; the audit reports them as `glyph` warnings (e.g. arrows and check marks in handwriting fonts).
 - **SVG**: `drawOn(pathEl, p)` stroke draw-on; `pointAt(pathEl, p)` → `{ x, y, angle }` for motion along a path.
-- **Media**: `loadImage(src)`, `loadJSON(src)`, `videoClip('assets/x.webm', { loop, rate })` → `<video>` with `await clip.seek(t)` (WebM/VP9 only — convert with `media.py clip`).
-- **Narration**: `loadWords(src)` / `narration(json)` → `vo.cue(phrase, n=1)`, `vo.cueEnd(phrase)`, `vo.has(phrase)`, `vo.wordAt(t)`, `vo.chunks({ maxWords, maxChars, pause })`, `vo.captionAt(t)` → `{ text, words: [{ w, s, e, active, spoken }], start, end }`. Phrase matching ignores case and punctuation; a missing cue throws with suggestions.
+- **Media**: `loadImage(src)`, `loadJSON(src, { optional })`, `videoClip('assets/x.webm', { loop, rate })` → `<video>` with `await clip.seek(t)` (WebM/VP9 only — convert with `media.py clip`).
+- **Narration**: `loadWords(src, { optional: true })` (→ `null` when the file doesn't exist yet) / `narration(json)` → `vo.cue(phrase, n=1)`, `vo.cueEnd(phrase)`, `vo.has(phrase)`, `vo.wordAt(t)`, `vo.chunks({ maxWords, maxChars, pause })`, `vo.captionAt(t)` → `{ text, words: [{ w, s, e, active, spoken }], start, end }`. Phrase matching ignores case and punctuation; a missing cue throws with suggestions.
 - **Misc**: `isRender` (true inside the renderer), `fmtTime(t)`.
 
 ## Drawing helpers (`mv-draw.js`) — canvas, all deterministic
@@ -116,7 +117,7 @@ The clip info object `s` (second argument to `render`, also passed to `build`):
 - **Cut paper**: `paperShape(ctx, pts, { color, seed, jag, shadow, blur, dx, dy, texture })`, `cutEdge(pts)`.
 - **Risograph**: `RISO` inks, `risoLayer(ctx, ink, drawFn, { offset: [dx, dy], grain, seed, t, key })` (multiply + misregistration; one call per ink, `key` unique per layer), `halftone(ctx, x, y, w, h, { value: (u, v) => 0..1, cell, angle, color })`.
 - **Isometric**: `const I = iso(originX, originY, unit)` → `I.p(x, y, z)`, `I.box(ctx, x, y, z, w, d, h, { color | top/left/right, stroke })`, `I.tile`, `I.grid`, `I.shadow`. Draw back-to-front (sort by `x + y`, then `z`).
-- **Chalk / glow**: `chalk(ctx, pts, { color, width, progress, seed })`, `glowStroke(ctx, pathFn, { color, width, glow })`.
+- **Chalk / glow**: `chalk(ctx, pts, { color, width, progress, seed, density })`, `glowStroke(ctx, pathFn, { color, width, glow })`, `chalkMask()` → a CSS mask URL that gives DOM text/shapes a dusty chalk texture (`css(el, { maskImage: m, webkitMaskImage: m, maskSize: '192px' })`).
 - **Mascot**: `buddy(ctx, x, y, size, { t, color, look: [x, y], talk: 0–1, mood, squash, wave })` — an original blob character rig; `talkAmount(vo, t)` drives its mouth from narration.
 - **Text**: `wrapLines(ctx, text, maxWidth)`.
 
